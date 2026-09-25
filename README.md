@@ -14,6 +14,7 @@ Local research notes and starter configs for building a **precision agricultural
 | [docs/WEED-ID.md](docs/WEED-ID.md) | Weed ID from ODM orthomosaics (models, datasets, K80/CPU inference) |
 | [docs/WAYPOINT-OPT.md](docs/WAYPOINT-OPT.md) | Economic spot-spray waypoint optimisation (TSP/ATSP, wind, terrain, 45° spray) |
 | [docs/OPENIPC.md](docs/OPENIPC.md) | OpenIPC live video / Wi‑Fi camera research (RTSP, FPV, ELRS coexistence) |
+| [docs/OBSTACLE-AVOIDANCE.md](docs/OBSTACLE-AVOIDANCE.md) | Collision/obstacle avoidance for low-altitude Guided spray (sensors, OA_TYPE, FC-only kit) |
 | [config/](config/) | Example parameter snippets (marked as examples) |
 | [scripts/](scripts/) | Example Lua sketch and live-stream frame extraction |
 
@@ -21,7 +22,7 @@ Local research notes and starter configs for building a **precision agricultural
 
 1. Read **docs/STACK.md** for the map of official repos, docs, and community projects.
 2. Walk **docs/SETUP-NOTES.md** before flashing or wiring pumps.
-3. See **docs/WEED-ID.md**, **docs/WAYPOINT-OPT.md**, and **docs/OPENIPC.md** for perception, planning, and camera-link research notes.
+3. See **docs/WEED-ID.md**, **docs/WAYPOINT-OPT.md**, **docs/OPENIPC.md**, and **docs/OBSTACLE-AVOIDANCE.md** for perception, planning, camera-link, and OA research notes.
 4. Copy **config/** snippets into your GCS only after adapting SERVO channel numbers, PWM ranges, and rates to *your* pump and airframe.
 5. Keep this repo private until you explicitly choose to publish.
 
