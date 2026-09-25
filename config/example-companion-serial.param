@@ -1,0 +1,11 @@
+# EXAMPLE ONLY — TELEM2-style companion link for Raspberry Pi UART.
+# Source concepts: https://ardupilot.org/dev/docs/raspberry-pi-via-mavlink.html
+#
+# SERIAL2 is commonly TELEM2 on Pixhawk-class boards — VERIFY port mapping.
+# Baud parameter units: 921 means 921600 baud in ArduPilot SERIAL*_BAUD convention.
+
+SERIAL2_PROTOCOL,2
+SERIAL2_BAUD,921
+
+# Optional: stream dataflash to companion (historically used with APSync; still valid with some loggers)
+# LOG_BACKEND_TYPE,3

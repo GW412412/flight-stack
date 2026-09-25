@@ -1,0 +1,27 @@
+# EXAMPLE ONLY — not official ArduPilot recommendations.
+# Adapt SERVO channel numbers, PWM ranges, and rates to YOUR pump and airframe.
+# Source concepts: https://ardupilot.org/copter/docs/common-sprayer.html
+#
+# Assumes (EXAMPLE):
+#   SERVO9  = pump   (Pixhawk-style AUX1 often maps to servo 9 — VERIFY on your board)
+#   SERVO10 = spinner
+#   RC7_OPTION = Sprayer (15)
+#
+# Load via Mission Planner "Load Params" only after editing, or set manually.
+
+SPRAY_ENABLE,1
+SPRAY_PUMP_RATE,10
+SPRAY_PUMP_MIN,0
+SPRAY_SPEED_MIN,100
+SPRAY_SPINNER,1300
+
+# Output functions: 22 = Sprayer Pump, 23 = Sprayer Mixer/Spinner
+SERVO9_FUNCTION,22
+SERVO9_MIN,1000
+SERVO9_MAX,2000
+SERVO10_FUNCTION,23
+SERVO10_MIN,1000
+SERVO10_MAX,2000
+
+# Pilot aux switch — channel 7 example
+RC7_OPTION,15
