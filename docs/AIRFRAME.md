@@ -30,8 +30,13 @@ verify on a thrust stand and scales before chemical flight.
 | Tank | **0.5 L** soft/rigid spray tank, CG on centreline (concentrate mix; see LIVE-PIPELINE dose) |
 | Pump | Small **PWM** diaphragm / brushless pump on `SERVOn_FUNCTION = 22` |
 | Boom | Light 3-section boom or single nozzle under CG ([LIVE-PIPELINE.md](LIVE-PIPELINE.md) §4.3) |
+| RTK (air) | **Holybro H-RTK F9P Rover** (~**USD 205**, holybro.com) → Pixhawk GPS UART |
+| RTK (ground) | **Holybro H-RTK F9P Base** (~**USD 259**) as **dedicated local base** — not third-party NTRIP |
+| RTK pair cost | ~**USD 464–500** (rover + base; antennas as shipped; tripod extra) |
 
-No hex conversion, no Jetson, no second Pi.
+No hex conversion, no Jetson, no second Pi. RTK uses a **local Holybro base** so remote
+paddocks without a nearby NTRIP mount still get centimetre fixes.
+
 
 ---
 
@@ -157,7 +162,47 @@ ag mule. Extra ~300–500 g off the liquid is meaningful thrust margin on 8×3.
 
 ---
 
-## 6. Power budget (approximate)
+## 6. RTK GPS — Holybro F9P rover + local base
+
+Locked for remote paddocks where **no nearby third-party NTRIP mount** exists.
+Corrections come from **our own base**, independent of RTK2Go / CORS availability.
+
+| Role | Product | Approx. price (USD) | Buy |
+|------|---------|---------------------|-----|
+| Air rover | **Holybro H-RTK F9P Rover** (ZED-F9P + compass; IST8310 or RM3100 SKU as ordered) | **~$205** | [holybro.com](https://holybro.com/products/h-rtk-f9p-rover) / ZED-F9P Rover listing |
+| Local base | **Holybro H-RTK F9P Base** (survey antenna kit) | **~$259** | [holybro.com](https://holybro.com/products/h-rtk-f9p-base) |
+| **Pair total** | Rover + base | **~$464–500** | Tripod / vehicle mount extra |
+
+### Air — rover on the F450
+
+- Mount the rover helix (or kit antenna) on a short mast **above** the props,
+  clear of the Thinker 5 GHz antennas and ELRS 2.4 antennas.
+- Connect to the **Pixhawk 4 / Cube Orange GPS (UART)** port with the supplied
+  GH cable (GPS1 preferred). ArduPilot auto-detects u-blox F9P; enable RTK as
+  in [ArduPilot RTK GPS Correction](https://ardupilot.org/copter/docs/common-rtk-correction.html).
+- Inject RTCM from the base via **GCS telemetry** (Mission Planner / QGC RTK
+  Inject) or a dedicated radio link — **not** over WFB-NG video RF
+  ([INTEGRATION.md](INTEGRATION.md)).
+
+### Ground — dedicated F9P base
+
+- Place the base on a **survey tripod** or **vehicle roof** at the **paddock
+  edge** (clear sky, stable, away from metal roofs when possible).
+- Survey-in or use a known fixed position; leave powered for the sortie.
+- Expected horizontal accuracy with a solid RTK Fix: about **1–2 cm**
+  (module class is ~1 cm + 1 ppm; treat **1–2 cm** as the ops planning figure
+  once Fix is green).
+- Rationale for owning the base: remote AU paddocks often have **no usable
+  nearby NTRIP mount**; the Holybro pair is self-contained.
+
+### Mass note
+
+Rover module + antenna is already covered under “GPS / compass + mast” in the
+AUW table (~40–60 g module class; helix adds a little — weigh the actual SKU).
+
+---
+
+## 7. Power budget (approximate)
 
 | Load | Voltage | Current / power (order of magnitude) |
 |------|---------|--------------------------------------|
@@ -177,25 +222,30 @@ brownouts corrupt SD and drop MAVLink.
 
 ---
 
-## 7. Wiring sketch (minimal)
+## 8. Wiring sketch (minimal)
 
 ```
 ELRS TX (pilot)
     │ 2.4 GHz CRSF/SBUS
     ▼
-Pixhawk (Copter + AC_Sprayer + OA)
-    ├─ UART ──► Pi 3B+ (mavlink-router / logs only)
+Pixhawk 4 / Cube (Copter + AC_Sprayer + OA)
+    ├─ GPS1 UART ──► Holybro H-RTK F9P Rover (air)
+    ├─ UART/USB ──► Pi 3B+ (mavlink-router / logs only)
     ├─ SERVO  pump FUNCTION 22
     ├─ RC option 15 sprayer inhibit/enable
-    ├─ GPS / TFmini / SF45 as OA docs
-    └─ telem ──► GS (SiK or ELRS telem)  ← live ID & voice COMMAND_LONG
+    ├─ TFmini / SF45 as OA docs
+    └─ telem ──► GS (SiK or ELRS telem)
+           ← live ID & voice COMMAND_LONG
+           ← RTCM from Holybro H-RTK F9P Base (paddock edge)
+
+Holybro F9P Base ──(tripod / vehicle roof)──► GCS RTK Inject ──telem──► FC
 
 Thinker video ──WFB-NG 5 GHz──► GS decode  ← NOT via Pi
 ```
 
 ---
 
-## 8. Acceptance checks before spray
+## 9. Acceptance checks before spray
 
 1. Scales: dry and wet AUW recorded.  
 2. Thrust stand: 4 motors ≥ **4.5 kgf** combined at usable temperature.  
@@ -203,10 +253,12 @@ Thinker video ──WFB-NG 5 GHz──► GS decode  ← NOT via Pi
 4. `DO_SPRAYER` / aux 15 from GS hub with Pi bridging telem (pump on bench).  
 5. Confirm Pi CPU stays cool in bridge-only mode; **no** live-spray ONNX on Pi.  
 6. ELRS failsafe → pump off (Lua / params per SETUP-NOTES).
+7. RTK: base survey-in at paddock edge; rover shows **RTK Fixed**; confirm
+   1–2 cm class before trusting live georeg / waypoint revisits.
 
 ---
 
-## 9. One-paragraph summary
+## 10. One-paragraph summary
 
 v1 airframe is a **nimble F450 / Flamewheel 450** on **8-inch 3-blade** props
 with **2216-class 4S** power, a **Pixhawk 4 or Cube Orange** FC (not original Pixhawk1) running
@@ -214,8 +266,9 @@ ArduCopter **`AC_Sprayer`** (`DO_SPRAYER` / aux **15**) and **ELRS** RC, plus a
 single **Pi 3B+** for MAVLink/logging only — **not** for live YOLOv8n-seg (CPU
 /~1 GB RAM cannot meet the GS live-ID FPS/latency budget) — at roughly
 **~2.7 kg wet AUW** with a **0.5 L** concentrate tank (improved 8×3 thrust
-margin vs the old 1 L / ~3 kg plan; stand-test still mandatory), keeping the
-stack to one FC and one companion.
+margin vs the old 1 L / ~3 kg plan; stand-test still mandatory), **Holybro
+H-RTK F9P Rover + local F9P Base** (~USD 464–500) for 1–2 cm RTK without
+NTRIP, keeping the stack to one FC and one companion.
 
 ---
 
