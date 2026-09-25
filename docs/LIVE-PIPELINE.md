@@ -155,38 +155,42 @@ outside the boom envelope (detection not under sprayable path).
 
 ### 4.2 Dose from canopy area
 
-Mask area in ROI pixels → ground area using GSD at AGL:
+Mask area in ROI pixels → ground area using GSD at AGL. Work in **cm²** for
+the dose law (spot pulses must stretch a ~1 L tank across many weeds):
 
 \[
-A_{\mathrm{m}^2} = N_{\mathrm{px}} \cdot \left(\frac{h \cdot s_{\mathrm{px}}}{f}\right)^2
+A_{\mathrm{cm}^2} = 10^{4}\, N_{\mathrm{px}} \cdot \left(\frac{h \cdot s_{\mathrm{px}}}{f}\right)^2
 \]
 
 where \(s_{\mathrm{px}}\) is sensor pixel pitch referred through the 640 letterbox
-scale, \(f\) focal length (m), \(h\) AGL (m). Calibrate once; store scale
-factor `meters_per_pixel_at_1m` in intrinsics YAML and multiply by \(h\).
+scale, \(f\) focal length (m), \(h\) AGL (m). Equivalently: store
+`meters_per_pixel_at_1m` in intrinsics YAML, compute \(A_{\mathrm{m}^2}\), then
+\(A_{\mathrm{cm}^2} = A_{\mathrm{m}^2} \times 10^{4}\).
 
-**Locked dose function (v1):**
+**Locked dose function (v1, conservative spot spray):**
 
 \[
-V_{\mathrm{mL}} = V_0 + k \cdot A_{\mathrm{m}^2}
+V_{\mathrm{mL}} = \mathrm{clamp}\bigl(V_0 + k \cdot A_{\mathrm{cm}^2},\; V_{\min},\; V_{\max}\bigr)
 \]
-
-with defaults:
 
 | Symbol | Value | Meaning |
 |--------|-------|---------|
-| \(V_0\) | **8 mL** | Minimum pulse per accepted weed |
-| \(k\) | **120 mL / m²** | Linear canopy term |
-| \(V_{\max}\) | **80 mL** | Cap per detection |
-| \(A_{\min}\) | **0.002 m²** (~4.5 cm square) | Below → skip (too small) |
+| \(V_0\) | **0.5 mL** | Base offset per accepted weed |
+| \(k\) | **2.5 mL / cm²** | Linear canopy term (mid of 2–3 mL/cm²) |
+| \(V_{\min}\) | **0.2 mL** | Hard floor for any fired pulse |
+| \(V_{\max}\) | **5 mL** | Hard cap per detection |
+| \(A_{\min}\) | **0.5 cm²** | Below → skip (too small / noise) |
 
-Clamp: \(V = \min(V_{\max},\, V_0 + k A)\) if \(A \ge A_{\min}\), else skip.
+If \(A_{\mathrm{cm}^2} < A_{\min}\), **skip** (no command). Otherwise apply the
+clamp above. Example: a **2 cm²** rosette → \(0.5 + 2.5\times 2 = 5.0\) mL
+(hits cap); a **0.2 cm²** speck is skipped; ~**200** full 5 mL pulses per
+litre worst case, far more when most weeds are sub-cap.
 
 **Pump on-time** from calibrated flow \(Q\) (mL/s) at current `SPRAY_PUMP_*`
 operating point (bench-measure once):
 
 \[
-t_{\mathrm{on}} = \mathrm{clamp}\left(\frac{V}{Q},\; 0.15\,\mathrm{s},\; 1.5\,\mathrm{s}\right)
+t_{\mathrm{on}} = \mathrm{clamp}\left(\frac{V}{Q},\; 0.05\,\mathrm{s},\; 0.60\,\mathrm{s}\right)
 \]
 
 ### 4.3 Boom section / nozzle mapping
@@ -306,7 +310,7 @@ Live weed spray for this project runs **entirely on the ground station**:
 decode the Thinker/IMX335 WFB-NG stream, crop a boom ROI, letterbox to
 **640**, run **YOLOv8n-seg ONNX** at **conf 0.35 / iou 0.5**, project each
 mask to WGS84 with GPS/attitude/intrinsics/AGL (require georeg confidence
-≥ 0.70), dose \(V = \min(80,\, 8 + 120 A)\) mL and pulse the nearest of
+≥ 0.70), dose \(V = \mathrm{clamp}(0.5 + 2.5\,A_{\mathrm{cm}^2},\, 0.2,\, 5)\) mL and pulse the nearest of
 **3 boom sections** via **`MAV_CMD_DO_SPRAYER` on telemetry** inside a
 **≤ 150 ms** budget, failing closed on bad georeg or link loss — and only
 after offline **mAP50 ≥ 0.80** and **recall ≥ 0.85** on a held-out paddock.
