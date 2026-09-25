@@ -14,7 +14,7 @@ Local research notes and starter configs for building a **precision agricultural
 | [docs/WEED-ID.md](docs/WEED-ID.md) | Weed ID from ODM orthomosaics (models, datasets, K80/CPU inference) |
 | [docs/WAYPOINT-OPT.md](docs/WAYPOINT-OPT.md) | Economic spot-spray waypoint optimisation (TSP/ATSP, wind, terrain, 45° spray) |
 | [config/](config/) | Example parameter snippets (marked as examples) |
-| [scripts/](scripts/) | Placeholder / example Lua sketch notes for spray helpers |
+| [scripts/](scripts/) | Example Lua sketch and live-stream frame extraction |
 
 ## How to use
 
