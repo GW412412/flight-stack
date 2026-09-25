@@ -19,7 +19,7 @@ MAVProxy chat module (experimental NL + short audio capture).
 |------|-----------------|
 | Speak mode commands hands-free | Always-listening or push-to-talk STT on GS/companion |
 | Fast “stop / hold / position hold” | Whitelisted phrases → Copter **Loiter** (and related) via `MAV_CMD_DO_SET_MODE` |
-| Safety | Spoken **confirm** (firm **confirm**/**yes** only) before arm and other critical changes; **~2 s** hard timeout cancels pending commands; reject unknown audio |
+| Safety | **Read-back** (“I heard: … — yes or no?”) then firm **yes**/**confirm**; **~2 s** hard timeout cancels; reject unknown audio |
 | Wind / mishears | High confidence threshold, confirm loop, fail closed (no command) |
 | Maturity | **SITL only** until scripted acceptance tests pass |
 
@@ -31,7 +31,8 @@ MAVProxy chat module (experimental NL + short audio capture).
 Mic (headset / GS) → Speech-to-text (local preferred)
                   → Phrase normaliser (lowercase, strip fillers)
                   → Whitelist matcher (exact / regex)
-                  → Policy gate (confirm? armed? RC override?)
+                  → Read-back (“I heard: … — yes or no?”)
+                  → Policy gate (firm yes within 2 s? armed? RC override?)
                   → MAVLink MAV_CMD_DO_SET_MODE (176)
                      param1 = MAV_MODE_FLAG_CUSTOM_MODE_ENABLED (1)
                      param2 = vehicle mode number
@@ -93,38 +94,36 @@ emergency kill.
 
 ---
 
-## Mandatory spoken confirmation
+## Read-back, then spoken confirmation
 
-**Before** sending MAVLink for any of:
+**Every** whitelist match — including spray-job `stop` / `hold` / `position hold` /
+`loiter` — goes through a **read-back** before any MAVLink is sent. This catches
+STT mishears before execution.
 
-- `arm`
-- `disarm`
-- `land`
-- `auto`
-- `rtl` / `return to launch` (optional but **recommended** on a loaded sprayer)
-- Any mode change while **spray pump is on** (if pump state is known)
+**Critical commands** (same gate, no exceptions): `arm`, `disarm`, `land`, `auto`,
+`rtl` / `return to launch`, and any mode change while the **spray pump is on**.
 
 **Flow:**
 
-1. Matcher accepts phrase → speech reply:  
-   `Confirm: set Loiter. Say confirm or yes.`  
-   (substitute the real action)
-2. **Hard timeout: ~2 seconds.** If no valid confirmation audio is accepted within
-   **2.0 s** of the prompt, the pending command is **automatically cancelled** and
-   **fails closed** (no MAVLink). Speak `Timed out — cancelled.`
-3. Confirmation must be a **firm positive** word only. Accepted: **`confirm`**,
-   **`yes`** (optional alias: **`affirmative`**).  
-   **Negative or ambiguous replies cancel** — including `no`, `cancel`, `stop`,
-   `wait`, `what`, partial words, low-confidence STT, or silence-with-noise.
-   Speak `Cancelled.` Do **not** treat hesitation or “okay?” as yes.
-4. Only after a firm positive within the 2 s window send `MAV_CMD_DO_SET_MODE` /
-   arm; speak `Loiter acknowledged` or the ACK failure reason.
+1. Matcher accepts a whitelist phrase (STT confidence ≥ threshold).
+2. **Read-back (mandatory, before confirm):** the system speaks the command it
+   heard, inviting yes/no, e.g.  
+   `I heard: position hold — yes or no?`  
+   Other examples: `I heard: arm — yes or no?`, `I heard: return to launch — yes or no?`  
+   Do **not** send MAVLink at this step.
+3. **Hard timeout: ~2 seconds** from the end of the read-back prompt. If no valid
+   positive is accepted within **2.0 s**, **automatically cancel** and **fail closed**
+   (no MAVLink). Speak `Timed out — cancelled.`
+4. Reply handling:
+   - **Firm positive only executes:** `yes`, `confirm` (optional: `affirmative`).
+   - **Negative or ambiguous cancels:** `no`, `cancel`, `stop`, `wait`, `what`,
+     wrong command name, partial words, low-confidence STT, or noise. Speak
+     `Cancelled.` Do **not** treat hesitation or “okay?” as yes.
+5. Only after a firm positive within the 2 s window send `MAV_CMD_DO_SET_MODE` /
+   arm/disarm; speak `Position hold acknowledged` (or the mapped mode) / ACK error.
 
-**Fast path (no confirm)** — only these, and only when **disarmed or pump off** and STT confidence ≥ threshold:
-
-- `stop` / `hold` / `position hold` / `loiter` / `hold position` → Loiter  
-
-If the pump is **on**, even Loiter requires **`confirm`** (drift into crop / people risk).
+There is **no silent fast path**. Read-back + firm yes is required for Loiter
+aliases too; the loop is still short (~2 s) so hands-free “hold” stays usable.
 
 ---
 
@@ -153,7 +152,7 @@ Rules:
 | STT | Prefer **local** model; require confidence ≥ **0.85** (tune in SITL/field) |
 | Match | Exact whitelist only; no fuzzy “sounds like Loiter” |
 | Push-to-talk | Default **PTT** (foot switch / hotkey) for v1; always-on only after field false-positive rate is measured |
-| Feedback | TTS or earpiece echoes the interpreted phrase before confirm / execute |
+| Feedback | Mandatory TTS **read-back** of the matched phrase before yes/no; then execute only on firm positive |
 | Logging | Log raw transcript + matched phrase + ACK to `logs/voice-commands.jsonl` for review |
 | Rate limit | Max **1** executed command per **2 s** |
 | Spray job | If two consecutive rejects, speak `Voice degraded — use radio` and pause auto-listen |
@@ -178,7 +177,7 @@ Do **not** ship the unrestricted MAVProxy chat assistant to a live sprayer.
 | Stage | Pass criteria |
 |-------|----------------|
 | 1. SITL phrase table | Every whitelist phrase maps to expected mode; non-phrases send **zero** MAVLink |
-| 2. SITL confirm gate | Arm/Land/Auto abort without firm `confirm`/`yes`; **2 s** timeout cancels; `no`/ambiguous cancels; Loiter fast-path when pump simulated off |
+| 2. SITL read-back + confirm | Every phrase gets “I heard: … — yes or no?”; Arm/Land/Auto/Loiter abort without firm `yes`/`confirm`; **2 s** timeout and `no`/ambiguous cancel; **zero** executes without read-back |
 | 3. Noise injection | Play wind/prop noise under mic; false execute rate **0** over N≥50 distractors |
 | 4. RC conflict | Flip ELRS mode switch during voice Loiter — vehicle follows RC; voice does not re-assert |
 | 5. Failsafe | Kill SITL RC → voice refuses commands |
@@ -192,7 +191,7 @@ Do **not** ship the unrestricted MAVProxy chat assistant to a live sprayer.
 
 Voice control for this project is a **GS/companion STT whitelist** that maps
 spoken **stop / hold / position hold / loiter** to Copter **Loiter** via
-`MAV_CMD_DO_SET_MODE`, with **arm / disarm / land / auto / RTL** behind a mandatory
-spoken **confirm**/**yes** (≈**2 s** timeout, else cancel), **ELRS retained as hard authority**, wind mishears failing
+`MAV_CMD_DO_SET_MODE`, with a mandatory **read-back** (“I heard: … — yes or no?”) then firm
+**confirm**/**yes** (≈**2 s** timeout, else cancel) for all whitelist actions including Loiter, **ELRS retained as hard authority**, wind mishears failing
 closed, and **SITL validation required** before any live vehicle — built as a
 tight scripted layer inspired by MAVProxy chat, not as unconstrained LLM control.
