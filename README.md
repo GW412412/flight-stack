@@ -64,3 +64,5 @@ Local research notes and starter configs for building a **precision agricultural
 MIT for these research notes (see [LICENSE](LICENSE)). Upstream projects keep their own licenses.
 
 - [Labeling workflow](docs/LABELING-WORKFLOW.md)
+
+- [Voice control](docs/VOICE-CONTROL.md)
