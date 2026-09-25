@@ -22,7 +22,7 @@ verify on a thrust stand and scales before chemical flight.
 | Motors (decision) | **4× 2216-class ~880–920 KV** on **4S** (fits F450 mounts; see thrust §5) |
 | ESCs | 4× **30–40 A** BLHeli_S / AM32, 4-in-1 or discrete |
 | Battery | **4S LiPo 5000–6000 mAh** (≥25C); start **5000** for AUW |
-| FC | **32-bit Pixhawk-class** — prefer **Holybro Pixhawk 4** or **Cube Orange** (2 MB+ flash, sprayer + Lua) |
+| FC | **Holybro Pixhawk 4** or **Cube Orange** (2 MB+ flash, sprayer + Lua) — **not** original Pixhawk1 / FMUv2 |
 | Firmware | **ArduCopter** current stable, build **with `AC_Sprayer`** |
 | RC | **ELRS 2.4 GHz** RX → FC `RCIN` / CRSF (or SBUS via ELRS PWM/CRSF bridge) |
 | Companion | **Raspberry Pi 3B+** only (spare on hand) — serial/USB MAVLink to FC |
@@ -53,6 +53,29 @@ Pixhawk 4-class are the default picks here.
 
 OA sensors (TFmini Plus down, SF45/B or forward TFminis) stay on the **FC**
 ([OBSTACLE-AVOIDANCE.md](OBSTACLE-AVOIDANCE.md)) — not on the Pi.
+
+### 2.1 Original Pixhawk (FMUv2 / Pixhawk1) vs Pixhawk 4 vs Cube Orange
+
+| | **Original Pixhawk** (STM32F427, FMUv2 / “Pixhawk 1”) | **Pixhawk 4** (FMUv5, STM32F765) | **Cube Orange** (H7) |
+|--|--|--|--|
+| Flash (typical) | Often **1 MB** (some later boards 2 MB) | **2 MB** | **2 MB** |
+| RAM / CPU | **256 KB** SRAM, F4 @ ~168 MHz — tight under Copter + extras | More F7 headroom | **H7** — most headroom of the three |
+| I/O | Classic DF13 set; fewer clean UARTs once GPS, telem, ELRS, Pi, lidars share ports | More serial / better connector set | Rich I/O; dual/isolate options on Cube carriers |
+| ArduCopter + **AC_Sprayer** | **Only if** the published build still includes sprayer — **1 MB limited firmware often strips `AC_Sprayer`** ([Firmware Limitations](https://ardupilot.org/copter/docs/common-limited-firmware.html); same caveat in STACK / SETUP-NOTES) | Yes on normal Copter builds | Yes on normal Copter builds |
+| **Lua** (RTL / tank-empty pump off) | Typically **no** on 1 MB scripting-disabled builds | Yes with `SCR_ENABLE` | Yes |
+| **ELRS** as RC | Yes in principle (CRSF/SBUS into `RCIN` / a UART) — not an F427-specific block | Yes | Yes |
+| MAVLink to **Pi 3B+** | Yes (TELEM2 / USB / UART) — serial bridging works on all three | Yes | Yes |
+| OA + spray + telem + Pi together | Port and CPU/RAM contention; feature cuts are the real risk | Comfortable for this F450 stack | Comfortable; preferred if budget allows |
+
+**Can the original Pixhawk run Copter with AC_Sprayer, ELRS, and MAVLink to the Pi?**
+ELRS RC and a Pi MAVLink link are fine. **AC_Sprayer (and Lua shutoffs this
+project relies on) are not reliable on classic 1 MB Pixhawk1 builds** — many
+stock limited images omit sprayer entirely. A rare 2 MB FMUv2 board with a
+custom full build is an edge case, not the plan.
+
+**Recommendation:** **Do not use the original Pixhawk1 / FMUv2 for this spray
+setup — step up to a Pixhawk 4 or Cube Orange** (Cube Orange if you want maximum
+I/O and CPU margin; Pixhawk 4 is the acceptable minimal step-up).
 
 ---
 
@@ -185,7 +208,7 @@ Thinker video ──WFB-NG 5 GHz──► GS decode  ← NOT via Pi
 ## 9. One-paragraph summary
 
 v1 airframe is a **nimble F450 / Flamewheel 450** on **8-inch 3-blade** props
-with **2216-class 4S** power, a **Pixhawk 4 / Cube Orange-class** FC running
+with **2216-class 4S** power, a **Pixhawk 4 or Cube Orange** FC (not original Pixhawk1) running
 ArduCopter **`AC_Sprayer`** (`DO_SPRAYER` / aux **15**) and **ELRS** RC, plus a
 single **Pi 3B+** for MAVLink/logging only — **not** for live YOLOv8n-seg (CPU
 /~1 GB RAM cannot meet the GS live-ID FPS/latency budget) — at roughly
