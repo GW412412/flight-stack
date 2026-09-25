@@ -1,0 +1,322 @@
+# Live camera-to-nozzle weed-ID pipeline
+
+Concrete **ground-station** inference path from the Thinker / IMX335 video
+stream to a MAVLink spray command. Complements offline orthomosaic ID in
+[WEED-ID.md](WEED-ID.md) and [LABELING-WORKFLOW.md](LABELING-WORKFLOW.md).
+Hardware and RF are locked in [SYSTEM-SPEC.md](SYSTEM-SPEC.md); sprayer MAVLink
+in [STACK.md](STACK.md).
+
+**Authority:** ELRS remains hard flight authority. Live ID may enable the pump
+only when gates below pass. Video RF never carries RC or spray commands.
+
+Compiled 2026-09-26. Decisions in this file are **locked for v1** unless
+explicitly revised.
+
+---
+
+## 0. Where it runs
+
+| Piece | Location |
+|-------|----------|
+| Camera + encode | Air: Thinker Base + IMX335 → H.264 720p30 |
+| Video RF | 5 GHz WFB-NG (RTL8812AU) |
+| Decode + weed ID + spray decision | **Ground station only** (40-core CPU / 256 GB / optional Tesla K80) |
+| Spray actuator | Pixhawk `AC_Sprayer` / section relays via **telemetry MAVLink** |
+| Model weights | Same `YOLOv8n-seg` ONNX as offline (`data/models/.../best.onnx`) |
+
+On-drone companion inference is **out of scope for v1**.
+
+---
+
+## 1. Capture and preprocess (GS)
+
+### 1.1 Ingest
+
+```
+WFB-NG decode → local RTP/UDP :5600 or RTSP restream
+             → OpenCV / GStreamer / FFmpeg frame grab
+             → timestamped BGR frame + frame_id
+```
+
+- Prefer **main stream** 1280×720 @ 30 fps (SYSTEM-SPEC).
+- Associate each frame with the **nearest MAVLink `GLOBAL_POSITION_INT` /
+  `ATTITUDE` / `GPS_RAW_INT` (or RTK equivalent)** by time, using a ring buffer
+  of telem samples (≤ 50 ms age). Drop the frame if telem age > **80 ms**.
+- Process **every Nth frame** so inference stays inside budget: default
+  **N = 2** (15 Hz ID) on CPU; **N = 1** only if measured decode+ID ≤ 40 ms.
+
+### 1.2 ROI extraction
+
+At spray AGL (~5–15 m) the boom footprint is a strip under the aircraft, not
+the full horizon.
+
+1. Using current attitude, AGL (downward rangefinder or baro+terrain), and
+   calibrated camera extrinsics, project a **ground rectangle** covering
+   **boom width × look-ahead distance**.
+2. Look-ahead default: **2.0 s × ground speed** (clamp 4–12 m).
+3. Crop that rectangle from the 720p frame → ROI. If projection fails
+   (bad attitude, AGL unknown), fall back to a **fixed central crop**:
+   centre **640×640** of the 720p frame (letterbox height).
+
+### 1.3 Resize and normalisation
+
+| Step | Locked value |
+|------|----------------|
+| Resize | ROI → **640×640** (`imgsz=640`), letterbox preserve aspect, pad with 114 |
+| Colour | BGR → RGB |
+| Dtype | `float32`, scale **÷ 255** → \[0, 1\] |
+| Layout | NCHW batch=1 for ONNX Runtime |
+| Optional | Skip CLAHE/live colour jitter (train-time only) |
+
+No extra ImageNet mean/std: Ultralytics YOLO-seg export expects **0–1**
+unless the ONNX metadata says otherwise — match the export used in labeling.
+
+---
+
+## 2. Inference (YOLOv8n-seg ONNX)
+
+| Setting | Locked |
+|---------|--------|
+| Model | **YOLOv8n-seg** ONNX (nano segmentation) |
+| Runtime | **ONNX Runtime CPU** (40 threads max); **K80 CUDA EP only** if a verified CUDA 11 + sm_37 stack is already working on the GS |
+| `imgsz` | **640** |
+| `conf` | **0.35** (stricter than offline pre-label 0.25 — live spray gate) |
+| `iou` | **0.5** (NMS) |
+| Max det | **50** per ROI |
+| Classes | DeepWeeds-aligned IDs 0–7; treat class 8 / background as non-spray. If ops collapsed labels to single `rosette`, spray any weed class ≥ conf |
+
+**Outputs used:** instance mask (or polygon), box, class id, confidence,
+mask area in pixels.
+
+**Post-NMS:** discard masks with area < **40 px** at 640 (noise); require
+mask∩box IoU sanity if both exist.
+
+---
+
+## 3. Georegistration (pixel → world)
+
+For each surviving detection at frame time \(t\):
+
+### 3.1 Inputs (must be co-timed)
+
+- Drone **WGS84** position (prefer RTK float/fixed; else GPS)
+- **Attitude** (roll, pitch, yaw) from FC
+- **AGL** \(h\) from downward rangefinder when in range; else baro − terrain
+- **Camera intrinsics** \(K\) (calibrated once on the IMX335+lens; store in
+  `config/camera-intrinsics.yaml`)
+- **Extrinsics:** camera-to-body rotation/translation; **gimbal angle** if
+  gimballed (v1 default: **fixed nadir / slight forward** mount — gimbal
+  angle = mount constant)
+- Pixel centroid of the mask (or box centre if mask missing)
+
+### 3.2 Projection (v1)
+
+1. Undistort pixel \((u,v)\) with \(K\) and distortion coeffs.
+2. Ray in camera frame → body → NED using attitude and mount.
+3. Intersect ray with local **tangent ground plane** at height \(h\) below
+   the camera (flat-earth under the boom for v1; DEM optional later).
+4. Convert NED offset to **WGS84 lat/lon** (and store local ENU metres for
+   boom mapping).
+
+### 3.3 Georegistration confidence \(g\)
+
+Start at **1.0**, multiply penalties (clamp to \[0, 1\]):
+
+| Condition | Multiply \(g\) by |
+|-----------|-------------------|
+| RTK fixed | 1.0 |
+| RTK float / good GPS (hdop ≤ 1.5) | 0.85 |
+| GPS only, hdop > 1.5 or sats < 10 | 0.5 |
+| Telem age 40–80 ms | 0.8 |
+| AGL from baro only (no rangefinder) | 0.75 |
+| \(|roll|\) or \(|pitch|\) > 20° | 0.6 |
+| Fallback central crop (no projected ROI) | 0.7 |
+
+**Accept georeg** only if \(g \ge \mathbf{0.70}\). Below that: log detection,
+**do not auto-spray** from that instance (operator may still spray manually).
+
+Also reject if projected ground point is **> 1.5× boom half-width** laterally
+outside the boom envelope (detection not under sprayable path).
+
+---
+
+## 4. Spray-decision rule
+
+### 4.1 Gates (all must pass)
+
+1. Live ID enabled by operator (RC aux or GS toggle).
+2. Video link healthy (not in SYSTEM-SPEC freeze / stills-only mode).
+3. Detection `conf ≥ 0.35`.
+4. Georeg \(g \ge 0.70\).
+5. Vehicle armed, not in failsafe / RTL / Land (unless ops explicitly allow).
+6. Ground speed ≥ `SPRAY_SPEED_MIN` (FC param) **or** use timed pulse mode
+   below when hovering over a target (see duration).
+7. No active **spray cooldown** overlap for the same world cell (see 4.4).
+
+### 4.2 Dose from canopy area
+
+Mask area in ROI pixels → ground area using GSD at AGL:
+
+\[
+A_{\mathrm{m}^2} = N_{\mathrm{px}} \cdot \left(\frac{h \cdot s_{\mathrm{px}}}{f}\right)^2
+\]
+
+where \(s_{\mathrm{px}}\) is sensor pixel pitch referred through the 640 letterbox
+scale, \(f\) focal length (m), \(h\) AGL (m). Calibrate once; store scale
+factor `meters_per_pixel_at_1m` in intrinsics YAML and multiply by \(h\).
+
+**Locked dose function (v1):**
+
+\[
+V_{\mathrm{mL}} = V_0 + k \cdot A_{\mathrm{m}^2}
+\]
+
+with defaults:
+
+| Symbol | Value | Meaning |
+|--------|-------|---------|
+| \(V_0\) | **8 mL** | Minimum pulse per accepted weed |
+| \(k\) | **120 mL / m²** | Linear canopy term |
+| \(V_{\max}\) | **80 mL** | Cap per detection |
+| \(A_{\min}\) | **0.002 m²** (~4.5 cm square) | Below → skip (too small) |
+
+Clamp: \(V = \min(V_{\max},\, V_0 + k A)\) if \(A \ge A_{\min}\), else skip.
+
+**Pump on-time** from calibrated flow \(Q\) (mL/s) at current `SPRAY_PUMP_*`
+operating point (bench-measure once):
+
+\[
+t_{\mathrm{on}} = \mathrm{clamp}\left(\frac{V}{Q},\; 0.15\,\mathrm{s},\; 1.5\,\mathrm{s}\right)
+\]
+
+### 4.3 Boom section / nozzle mapping
+
+Assume a **linear boom** of \(S\) sections (default **S = 3**: left / centre /
+right), width \(W\) metres, centred under the aircraft.
+
+1. Transform detection ENU into **body lateral** axis \(y\) (right positive).
+2. Section index:
+   \[
+   s = \mathrm{clamp}\left(\left\lfloor \frac{y + W/2}{W/S} \right\rfloor,\; 0,\; S-1\right)
+   \]
+3. **v1 actuation:**
+   - If only a **single pump** (`AC_Sprayer`): fire the pump for \(t_{\mathrm{on}}\)
+     whenever any section accepts (section id logged for later multi-valve).
+   - If **per-section relays** exist: `DO_SET_RELAY` / servo for section \(s\)
+     for \(t_{\mathrm{on}}\`; other sections off.
+
+Nearest-nozzle refinement (optional): within a section, pick nozzle index by
+finer \(y\) bins; v1 logs it but does not require >3 valves.
+
+### 4.4 Dedup / cooldown
+
+Hash world cell at **0.5 m** resolution. After an accept, **suppress** new
+auto-spray for that cell for **3.0 s** (or until the aircraft has moved
+**> 1.0 m** from the cell centre). Prevents 15 Hz re-triggers on one plant.
+
+---
+
+## 5. MAVLink command path and latency budget
+
+### 5.1 Transport
+
+- Send spray commands on the **FC telemetry link** (SiK / ELRS telem /
+  Ethernet companion bridge) — **never** on WFB-NG video RF.
+- Primary: **`MAV_CMD_DO_SPRAYER` (216)** — param1 = **1** start, **0** stop.
+- Alternate (if 216 unavailable on build): **`MAV_CMD_DO_AUX_FUNCTION`** with
+  aux **15** (Sprayer), switch position high to enable, low to disable.
+- Timed pulse: GS starts spray (param1=1), sleeps \(t_{\mathrm{on}}\) on GS clock,
+  sends stop (param1=0). Prefer a short Lua helper on the FC later; v1 is
+  GS-timed.
+
+### 5.2 Latency budget (locked, total ≤ **150 ms** decision loop)
+
+| Segment | Budget |
+|---------|--------|
+| Capture + H.264 encode (air) | 25 ms |
+| WFB-NG air → GS | 30 ms |
+| Decode + ROI + resize | 15 ms |
+| ONNX YOLOv8n-seg infer (CPU, 640) | **40 ms** |
+| Georeg + dose + section map | 5 ms |
+| MAVLink spray command RTT start | **20 ms** |
+| **Total aim** | **≤ 135 ms** (margin to **150 ms**) |
+
+If measured decode+ID > 40 ms: increase frame skip \(N\), or shrink ROI, or
+enable K80 EP — **do not** raise conf or skip georeg to “go faster”.
+
+Log `t_frame_capture`, `t_infer_done`, `t_mav_sent` per accept for post-flight
+review (`logs/live-pipeline.jsonl`).
+
+---
+
+## 6. Fallback behaviour
+
+| Condition | Action |
+|-----------|--------|
+| Georeg \(g < 0.70\) | No auto-spray; log detection; optional HUD warn |
+| Telem age > 80 ms | Drop frame; no command |
+| Video link degraded (SYSTEM-SPEC steps 1–3) | Raise live conf gate to **0.50**; keep spray if still gated |
+| Video step 4 (stills / freeze live ID) or RF loss | **Pump off immediately**; disable live auto-spray; continue ELRS; spray only from **precomputed waypoint mission** if already uploaded |
+| Infer timeout (> 2× budget) | Skip frame; after 5 consecutive skips → disable live auto-spray and speak/log `Live ID stalled` |
+| Operator RC sprayer switch off | Hard inhibit — GS must not override |
+| Failsafe / RTL / Land | Force `DO_SPRAYER` off; refuse new enables |
+
+**Fail closed:** never leave the pump on when video or georeg is untrusted.
+
+---
+
+## 7. Offline acceptance bar before live ops
+
+Live auto-spray is **authorised only after** the same weights pass offline
+eval on a **held-out paddock** tile set (not used in training):
+
+| Metric | Minimum |
+|--------|---------|
+| **mAP50** (instance seg, weed classes) | **≥ 0.80** |
+| **Recall** (instance, conf 0.35) | **≥ 0.85** |
+| False-positive rate on bare-pasture tiles | **≤ 5%** of tiles with any FP at conf 0.35 |
+
+Record the eval run (date, commit hash, `data.yaml`, metrics) under
+`data/models/<name>/EVAL.md`. Until that file exists with passing numbers,
+live ID may run in **shadow mode** (detect + log only, pump commands
+inhibited).
+
+---
+
+## 8. End-to-end diagram
+
+```
+IMX335 → Thinker H.264 720p30 → WFB-NG 5 GHz
+      → GS decode (RTP/RTSP)
+      → telem-synced frame
+      → boom ROI → letterbox 640 → /255 NCHW
+      → YOLOv8n-seg ONNX (conf=0.35, iou=0.5)
+      → NMS / area filter
+      → georeg (GPS + attitude + K + mount + AGL) → g
+      → if conf & g gates: dose V(A) → t_on → section s
+      → MAV_CMD_DO_SPRAYER (telem) → AC_Sprayer / relays
+      → JSONL audit log
+```
+
+---
+
+## 9. One-paragraph summary
+
+Live weed spray for this project runs **entirely on the ground station**:
+decode the Thinker/IMX335 WFB-NG stream, crop a boom ROI, letterbox to
+**640**, run **YOLOv8n-seg ONNX** at **conf 0.35 / iou 0.5**, project each
+mask to WGS84 with GPS/attitude/intrinsics/AGL (require georeg confidence
+≥ 0.70), dose \(V = \min(80,\, 8 + 120 A)\) mL and pulse the nearest of
+**3 boom sections** via **`MAV_CMD_DO_SPRAYER` on telemetry** inside a
+**≤ 150 ms** budget, failing closed on bad georeg or link loss — and only
+after offline **mAP50 ≥ 0.80** and **recall ≥ 0.85** on a held-out paddock.
+
+---
+
+## Related docs
+
+- [SYSTEM-SPEC.md](SYSTEM-SPEC.md) — camera, RF, latency, link fallbacks
+- [WEED-ID.md](WEED-ID.md) — offline ortho tiling / model family
+- [LABELING-WORKFLOW.md](LABELING-WORKFLOW.md) — train / export ONNX
+- [STACK.md](STACK.md) — `AC_Sprayer`, MAVLink 216 / aux 15
+- [WAYPOINT-OPT.md](WAYPOINT-OPT.md) — offline mission spray (non-live)
