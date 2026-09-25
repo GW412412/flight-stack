@@ -37,12 +37,12 @@ DeepWeeds: 8 weed species + negatives (paper/repo in [WEED-ID.md](WEED-ID.md)).
 |----|--------------------------|---------------------------|
 | 0 | `chinee_apple` | Chinee apple |
 | 1 | `lantana` | Lantana |
-| 2 | `snake_weed` | Snake weed |
-| 3 | `prickly_acacia` | Prickly acacia |
-| 4 | `siam_weed` | Siam weed |
-| 5 | `parthenium` | Parthenium |
-| 6 | `rubber_vine` | Rubber vine |
-| 7 | `parkinsonia` | Parkinsonia |
+| 2 | `parkinsonia` | Parkinsonia |
+| 3 | `parthenium` | Parthenium |
+| 4 | `prickly_acacia` | Prickly acacia |
+| 5 | `rubber_vine` | Rubber vine |
+| 6 | `siam_weed` | Siam weed |
+| 7 | `snake_weed` | Snake weed |
 | 8 | `negative` | Negative — use for **empty tiles only** (no polygons); do not paint fake shapes on bare pasture |
 
 Label IDs **0–7** match DeepWeeds weed species; **8** is DeepWeeds Negative.
