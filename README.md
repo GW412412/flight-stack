@@ -10,6 +10,7 @@ Local research notes and starter configs for building a **precision agricultural
 | Path | Purpose |
 |------|---------|
 | [docs/STACK.md](docs/STACK.md) | Full-stack summary: firmware → spray extensions → companion PC → GCS → base station |
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) | How modules connect: buses, authority, end-to-end data flow |
 | [docs/SETUP-NOTES.md](docs/SETUP-NOTES.md) | Practical setup checklist and ordering of work |
 | [docs/WEED-ID.md](docs/WEED-ID.md) | Weed ID from ODM orthomosaics (models, datasets, K80/CPU inference) |
 | [docs/LIVE-PIPELINE.md](docs/LIVE-PIPELINE.md) | Live GS camera→ROI→ONNX→georeg→MAVLink spray pipeline |
@@ -25,7 +26,7 @@ Local research notes and starter configs for building a **precision agricultural
 
 1. Read **docs/STACK.md** for the map of official repos, docs, and community projects.
 2. Walk **docs/SETUP-NOTES.md** before flashing or wiring pumps.
-3. See **docs/WEED-ID.md**, **docs/LIVE-PIPELINE.md**, **docs/WAYPOINT-OPT.md**, **docs/OPENIPC.md**, **docs/OPENIPC-CAMERAS.md**, **docs/SYSTEM-SPEC.md**, and **docs/OBSTACLE-AVOIDANCE.md** for perception, live spray, planning, camera-link, and OA notes.
+3. Start with **docs/INTEGRATION.md** for the wiring diagram, then the module specs (**WEED-ID**, **LIVE-PIPELINE**, **VOICE-CONTROL**, **WAYPOINT-OPT**, **SYSTEM-SPEC**, **OPENIPC**, **OBSTACLE-AVOIDANCE**, etc.).
 4. Copy **config/** snippets into your GCS only after adapting SERVO channel numbers, PWM ranges, and rates to *your* pump and airframe.
 5. Keep this repo private until you explicitly choose to publish.
 
