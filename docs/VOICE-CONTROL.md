@@ -178,7 +178,7 @@ Do **not** ship the unrestricted MAVProxy chat assistant to a live sprayer.
 | Stage | Pass criteria |
 |-------|----------------|
 | 1. SITL phrase table | Every whitelist phrase maps to expected mode; non-phrases send **zero** MAVLink |
-| 2. SITL confirm gate | Arm/Land/Auto abort without `confirm`; Loiter fast-path works when pump simulated off |
+| 2. SITL confirm gate | Arm/Land/Auto abort without firm `confirm`/`yes`; **2 s** timeout cancels; `no`/ambiguous cancels; Loiter fast-path when pump simulated off |
 | 3. Noise injection | Play wind/prop noise under mic; false execute rate **0** over N≥50 distractors |
 | 4. RC conflict | Flip ELRS mode switch during voice Loiter — vehicle follows RC; voice does not re-assert |
 | 5. Failsafe | Kill SITL RC → voice refuses commands |
