@@ -260,7 +260,114 @@ pure opportunistic live pulses, feed [WAYPOINT-OPT.md](WAYPOINT-OPT.md) with
    default is **visit all** clusters — empty pasture is skipped by construction.
 
 Live opportunistic mode still pulses when a gated detection is under the boom;
-clustering mainly shapes the **scout → map → revisit** mission.
+clustering mainly shapes the **scout → map → revisit** mission. On each mapped
+visit, **approach-scan** (§4.6) turns the inbound leg into a mini
+search-and-destroy pass so year-on-year weed movement near \(W\) is caught
+without a global replan ([WAYPOINT-OPT.md](WAYPOINT-OPT.md) §7).
+
+### 4.6 Approach-scan (search-and-destroy on mapped waypoints)
+
+**Intent:** do **not** only fly straight to a known weed waypoint and spray the
+mapped target. Keep the camera / live ID **actively scanning** the FOV on
+approach for additional weed signatures. The offline map gets you **close**;
+live scan catches what **shifted** since the scout (year-on-year movement,
+late emergents, ortho/GPS drift).
+
+#### 4.6.1 When it arms
+
+Approach-scan is active when **all** of:
+
+1. Mission / Guided is flying toward a **mapped** weed waypoint \(W\) (from
+   the cluster ATSP mission).
+2. Live ID is operator-enabled (same RC aux / GS toggle as §4.1).
+3. Aircraft is inside the **approach corridor**: roughly from
+   look-ahead distance out to \(W\), within ~**8–12 m** horizontal of the
+   planned inbound track (same accept radius as WAYPOINT-OPT §7.3).
+
+Outside a mapped approach, behaviour stays pure opportunistic boom pulses
+(§4.1–4.4) with no path divert.
+
+#### 4.6.2 Widen the scan window
+
+While approach-scan is armed, slightly **widen** the §1.2 ROI before
+inference:
+
+| Parameter | Cruise / opportunistic | Approach-scan |
+|-----------|------------------------|---------------|
+| Look-ahead | **2.0 s × GS** (clamp 4–12 m) | **2.5 s × GS** (clamp 5–15 m) |
+| Lateral boom envelope | boom width | boom width **× 1.25** (still reject sprays outside true boom in §3.3) |
+| `conf` / georeg / cooldown | unchanged | **same locks**: conf ≥ **0.50**, \(g \ge 0.70\), 0.5 m / 3 s cooldown, RC inhibit, fail-closed |
+
+Widening is for **detection discovery** only. Auto-spray still requires the
+projected point under the sprayable boom (or a brief hover/divert that puts
+it there). Do not lower conf to “find more” — precision-first stays locked.
+
+#### 4.6.3 New detection → active spray list
+
+On each accepted frame during approach:
+
+1. Run normal gates (§4.1): conf ≥ 0.50, \(g \ge 0.70\), link/telem/RC/failsafe.
+2. If the detection’s world cell matches the **mapped** \(W\) (within cooldown
+   cell / ~0.5–1 m): treat as the planned target (origin=`mapped`).
+3. Else if within approach accept radius of \(W\) and not on cooldown: treat as
+   **opportunistic** — georegister, append to the **active spray list** for
+   this approach (cap **3** inserts per \(W\)).
+4. Detections outside the corridor: log only (or boom-pulse if already under
+   boom in opportunistic mode); do **not** divert the approach path.
+
+Active spray list is seeded with mapped \(W\) when the approach arms.
+
+#### 4.6.4 Path adjust / hover via `mavlink_hub`
+
+Only `mavlink_hub` may write flight or spray commands ([INTEGRATION.md](INTEGRATION.md)).
+
+Live ID publishes events; hub executes if RC and fail-closed rules allow:
+
+| Event | Hub action |
+|-------|------------|
+| `SprayRequest` (mapped or opportunistic) | Existing spray arbiter → `MAV_CMD_DO_SPRAYER` |
+| `HoverRequest` (brief) | Short **Loiter** or position-hold (order of **2–4 s**) while a fringe target is engaged |
+| `PathOffsetRequest` | Small **Guided** lateral/forward offset (metres) to put boom over a list member, then resume toward remaining list / next WP |
+
+v1 keeps adjusts **local and brief**. Hub **drops** hover/offset if: RC
+sprayer inhibit, mode conflict with pilot stick, failsafe/RTL/Land, OA
+fighting the setpoint, or video/georeg untrusted. No second spray writer.
+
+#### 4.6.5 Engage / spray order (simple rule)
+
+**Nearest-first on the active spray list:**
+
+1. While the list is non-empty and approach-scan is still armed for \(W\):
+   pick the pending target **closest** to the current aircraft ground
+   position (ENU).
+2. If that target is under the boom → dose + pulse (§4.2–4.3).
+3. If not → hub `PathOffsetRequest` / brief `HoverRequest`, then pulse when
+   gated under boom.
+4. Mark sprayed (cooldown cell); remove from list; **recompute** nearest
+   among remaining (includes mapped \(W\) until sprayed).
+5. When the list is empty (or insert cap hit and \(W\) sprayed) → clear
+   approach-scan for this \(W\) and continue the **precomputed** next ATSP
+   edge. **No global replan.**
+
+So new weeds found on the way in are engaged **before or interleaved with**
+\(W\) by geometry, not by a complex TSP insert. Mapped \(W\) is never
+skipped unless gates fail (then log and move on — offline revisit later).
+
+#### 4.6.6 Logging (mapped vs opportunistic)
+
+Extend `logs/live-pipeline.jsonl` accepts with:
+
+| Field | Values / meaning |
+|-------|------------------|
+| `origin` | `mapped` \| `opportunistic` |
+| `approach_wp_id` | Mission / GeoJSON id of \(W\) being approached |
+| `insert_index` | 0 for mapped seed; 1…n for live inserts |
+| `path_adjust` | `none` \| `hover` \| `offset` (what hub ran before pulse) |
+| `year_shift_hint` | Optional: distance (m) from mapped \(W\) for opportunistic hits — post-flight signal that the map aged |
+
+Hub mirrors spray/mode lines in `logs/mavlink-commands.jsonl` as today.
+Post-flight review: opportunistic fraction near mapped waypoints is the
+metric that approach-scan is working (map close, live catch of movers).
 
 ---
 
@@ -348,8 +455,10 @@ IMX335 → Thinker H.264 720p30 → WFB-NG 5 GHz
       → NMS / area filter
       → georeg (GPS + attitude + K + mount + AGL) → g
       → if conf & g gates: dose V(A) → t_on → section s
+      → on approach to mapped W: widen ROI; active spray list
+        (mapped + opportunistic, nearest-first; hover/offset via hub)
       → MAV_CMD_DO_SPRAYER (telem) → AC_Sprayer / relays
-      → JSONL audit log
+      → JSONL audit log (origin=mapped|opportunistic)
 ```
 
 ---
@@ -364,9 +473,12 @@ recall), projects each mask to WGS84 with GPS/attitude/intrinsics/AGL (georeg
 ≥ 0.70), doses \(V = \mathrm{clamp}(0.25 + 1.25\,A_{\mathrm{cm}^2},\, 0.1,\, 2.5)\) mL from a
 **0.5 L** concentrate tank (AI-equivalent, half carrier), pulses the nearest of
 **3 boom sections** via **`MAV_CMD_DO_SPRAYER` on telemetry** inside **≤ 150 ms**,
-clusters sparse waypoint revisits, fails closed on bad georeg or link loss, and
-authorises live ops only after offline **mAP50 ≥ 0.80**, **recall ≥ 0.85** at
-conf 0.50, and a **zero-escape** 10% miss spot-check on a held-out clean paddock.
+clusters sparse waypoint revisits, runs **approach-scan** on each mapped weed
+(widened FOV, nearest-first active spray list, brief hover/offset via
+`mavlink_hub`) so year-on-year movers near the map are caught, fails closed on
+bad georeg or link loss, and authorises live ops only after offline
+**mAP50 ≥ 0.80**, **recall ≥ 0.85** at conf 0.50, and a **zero-escape** 10% miss
+spot-check on a held-out clean paddock.
 
 ---
 
@@ -376,4 +488,5 @@ conf 0.50, and a **zero-escape** 10% miss spot-check on a held-out clean paddock
 - [WEED-ID.md](WEED-ID.md) — offline ortho tiling / model family
 - [LABELING-WORKFLOW.md](LABELING-WORKFLOW.md) — train / export ONNX
 - [STACK.md](STACK.md) — `AC_Sprayer`, MAVLink 216 / aux 15
-- [WAYPOINT-OPT.md](WAYPOINT-OPT.md) — offline mission spray (non-live)
+- [WAYPOINT-OPT.md](WAYPOINT-OPT.md) — clustered ATSP mission + approach-scan planner hooks (§7)
+- [INTEGRATION.md](INTEGRATION.md) — `mavlink_hub` spray/hover arbiter, RC authority

@@ -119,6 +119,88 @@ For Pareto exploration of time vs chemical use: **pymoo NSGA-II** on permutation
 3. Solve with **OR-Tools** (matrix callback + guided local search); use **LKH** if instances get large.
 4. If battery/tank binding: **drop visits** via OR-Tools penalties (prize-collecting), prizes ∝ weed severity / canopy area.
 5. Use **pymoo** only if you need an explicit multi-objective front; use **OpenCoverage** for scout orthomosaic flights, not for spot-spray ordering.
+6. Export each mapped weed as an **approach-scan** leg (§7): leave loiter/hover hooks and slack for live inserts; do not treat waypoints as spray-only pins. Runtime search-and-destroy: [LIVE-PIPELINE.md](LIVE-PIPELINE.md) §4.6.
+
+---
+
+## 7. Approach-scan (search-and-destroy per waypoint)
+
+Each mapped weed waypoint is a mini **search-and-destroy** pass, not a
+straight-line “fly to point and dump”. The offline map gets the aircraft
+**close**; live ID on the approach leg catches weeds that **shifted** since
+the scout flight (year-on-year movement, late emergents, GPS/ortho drift).
+Runtime behaviour lives in [LIVE-PIPELINE.md](LIVE-PIPELINE.md) §4.6; this
+section is what the **planner / mission builder** must leave room for.
+
+### 7.1 Approach legs
+
+For every accepted spray target \(W\) in the ATSP order:
+
+1. Emit a normal **NAV waypoint** (or Guided pose) to \(W\) with the locked
+   inbound / spray / **+45° departure** headings from §3.
+2. Tag the inbound segment as an **approach-scan leg**: from
+   \(\approx\) **lookahead distance** (LIVE-PIPELINE ROI default, ~4–12 m)
+   out to \(W\), live ID stays **on** and the scan window is **widened**
+   slightly (planner metadata / mission comment — runtime applies the
+   wider ROI).
+3. Do **not** encode a fixed spray-only pulse that assumes \(W\) is the only
+   plant. Mission items are **anchors**; live inserts may add brief coverage
+   before \(W\) is cleared.
+
+### 7.2 Loiter / hover hooks
+
+Leave mission structure that the GS `mavlink_hub` can use without rewriting
+the whole route mid-flight:
+
+| Hook | Purpose |
+|------|---------|
+| Optional **NAV_LOITER_TIME** / short Loiter after arrival at \(W\) | Hold while live ID finishes a last FOV sweep if the boom missed a fringe detection |
+| **Hold / resume** via hub | Live ID may request a **brief hover** or small Guided offset when a new gated weed sits off the current track but inside the approach-scan radius |
+| Cluster exit WP | After the local engage list for \(W\) is empty, resume the next ATSP edge — do not open a new global replan |
+
+v1 path adjust is **local only** (seconds of hover or a few metres of divert).
+ELRS remains hard authority; hub must drop hover requests if RC inhibits or
+failsafe is active ([INTEGRATION.md](INTEGRATION.md)).
+
+### 7.3 Room for live inserts
+
+Mission builder rules:
+
+1. **Accept radius** around \(W\): treat detections within ~**8–12 m** of the
+   mapped point (approach corridor) as candidates for this pass; farther
+   hits stay for later cluster revisits or a new map.
+2. **Do not pack** consecutive waypoints so tightly that a 2–4 s hover on
+   one approach collides with the next NAV item — leave cruise / turn
+   slack consistent with vehicle turn radius (§2–3).
+3. Export still lists **mapped** targets only; opportunistic sprays are
+   runtime additions logged by live ID, not permanent mission edits in v1.
+4. Cap opportunistic inserts per approach (runtime default **3**) so one
+   noisy patch cannot explode flight time — planner should assume worst
+   case when estimating battery/tank.
+
+### 7.4 Interaction with ATSP clusters
+
+Clustering from [LIVE-PIPELINE.md](LIVE-PIPELINE.md) §4.5 still owns the
+**outer** order:
+
+1. DBSCAN / radius cluster (~15–25 m) → ATSP **within** cluster → order
+   clusters by centroids.
+2. Approach-scan runs **inside** each visit to a mapped node: new weeds
+   join that node’s **active spray list** only.
+3. **Do not** re-solve the global ATSP when a live hit appears. Opportunistic
+   targets are sprayed on this pass (nearest-first — see LIVE-PIPELINE),
+   then the aircraft continues to the next **precomputed** cluster edge.
+4. Year-on-year shift that lands a weed in a **different** cluster than last
+   season’s map is recovered either by this approach FOV (if still near some
+   \(W\)) or by the next scout → rematch cycle — not by mid-mission global
+   replan in v1.
+
+### 7.5 Why this stays economic
+
+At ~**25 weeds / ~5 acres**, empty pasture between clusters is still skipped
+by ATSP. Approach-scan only widens work **where the map already sent the
+aircraft** — small time cost, large gain against map staleness, without
+turning the sortie into full-field coverage.
 
 ---
 
@@ -133,3 +215,12 @@ For Pareto exploration of time vs chemical use: **pymoo NSGA-II** on permutation
 - OpenCoverage: https://pypi.org/project/opencoverage/
 - drone_scans: https://github.com/arthurrichards77/drone_scans
 - ODM docs (DEM/ortho): https://docs.opendronemap.org/
+
+---
+
+## Related docs
+
+- [LIVE-PIPELINE.md](LIVE-PIPELINE.md) — live ID, approach-scan runtime, spray via hub
+- [WEED-ID.md](WEED-ID.md) — offline map inputs
+- [INTEGRATION.md](INTEGRATION.md) — `mavlink_hub`, RC authority
+- [STACK.md](STACK.md) — ArduCopter mission / `AC_Sprayer`
