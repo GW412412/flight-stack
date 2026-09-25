@@ -7,6 +7,10 @@ Single glue spec for how the precision spot-spraying pieces connect in
 **Ops shape:** touch-up on otherwise clean paddocks (~25 weeds / ~5 acres).
 See [LIVE-PIPELINE.md](LIVE-PIPELINE.md) operational context.
 
+**Airframe (locked):** F450-class + 8×3 props; **32-bit Pixhawk-class** FC; single
+**Raspberry Pi 3B+** companion (bridge/logs only). Details: [AIRFRAME.md](AIRFRAME.md).
+Live YOLOv8n-seg spray decisions stay on the **GS**, not the Pi.
+
 ---
 
 ## 1. Authority order (never invert)
@@ -14,7 +18,7 @@ See [LIVE-PIPELINE.md](LIVE-PIPELINE.md) operational context.
 | Rank | Layer | May do | Must not |
 |------|-------|--------|----------|
 | 1 | **Pilot + ELRS (RC)** | Fly, mode switch, arm, kill, sprayer inhibit | — |
-| 2 | **Flight controller** (ArduCopter + OA + `AC_Sprayer`) | Modes, failsafes, Simple Avoidance / BendyRuler, pump PWM | — |
+| 2 | **Flight controller** (**Pixhawk 4 / Cube Orange-class**, ArduCopter + OA + `AC_Sprayer`) | Modes, failsafes, Simple Avoidance / BendyRuler, pump PWM | — |
 | 3 | **GS MAVLink services** (live ID, voice, mission upload) | Suggest modes, pulse sprayer, upload waypoints | Override RC; carry RC on video RF |
 | 4 | **Operator GCS UI** | Plan, monitor, abort | Bypass ELRS for flight |
 
@@ -36,6 +40,7 @@ commands.
 | Sprayer hardware | [STACK.md](STACK.md) | FC | `AC_Sprayer` / relays / Lua |
 | Obstacle / terrain | [OBSTACLE-AVOIDANCE.md](OBSTACLE-AVOIDANCE.md) | **FC only** (v1) | Rangefinders → PRX / OA |
 | Stack / GCS / RTK | [STACK.md](STACK.md), [SETUP-NOTES.md](SETUP-NOTES.md) | GS + base | MAVLink + RTCM |
+| Airframe / companion | [AIRFRAME.md](AIRFRAME.md) | **Pixhawk-class FC** + **Pi 3B+** (only companions) | ELRS RC; UART MAVLink; video bypasses Pi |
 
 ---
 
@@ -80,19 +85,21 @@ commands.
                                    │ USB / Ethernet) — NOT video RF
                                    ▼
  ┌─────────────────────────────────────────────────────────────────┐
- │ AIRFRAME                                                         │
+ │ AIRFRAME — F450 + 8×3 props ([AIRFRAME.md](AIRFRAME.md))         │
  │                                                                  │
  │  ELRS RX (2.4) ◄════ RC sticks / modes / arm / sprayer inhibit   │
  │       │                                                          │
  │       ▼                                                          │
- │  Pixhawk / ArduCopter                                            │
+ │  Pixhawk 4 / Cube Orange-class (ArduCopter + AC_Sprayer)         │
  │    ├─ flight modes, failsafes                                    │
  │    ├─ OA: TFmini(+)/SF45 → Simple Avoidance + BendyRuler         │
  │    ├─ AC_Sprayer / section relays ◄── DO_SPRAYER / aux 15        │
- │    └─ mission items (clustered touch-up waypoints)               │
+ │    ├─ mission items (clustered touch-up waypoints)               │
+ │    └─ UART/USB ──► Raspberry Pi 3B+ (mavlink bridge + logs ONLY; │
+ │                    not live YOLO spray authority)                │
  │                                                                  │
  │  Thinker+IMX335 ──H.264 720p30──► RTL8812AU ──WFB-NG 5 GHz──► GS │
- │  (pixels only)                                                   │
+ │  (pixels only — does not transit the Pi)                         │
  │                                                                  │
  │  RTK GPS ◄── separate radio / NTRIP (not on video Wi‑Fi)         │
  └─────────────────────────────────────────────────────────────────┘
@@ -106,7 +113,7 @@ commands.
 |-----|--------|---------|-----------|
 | **RC** | ELRS 2.4 GHz | Sticks, mode, arm, sprayer switch | Video, weed ID |
 | **Video** | WFB-NG 5 GHz | H.264 (and GS restream) | RC, MAVLink spray, RTK |
-| **Telem** | Serial / ELRS telem / SiK / Ethernet | MAVLink (modes, spray, mission, GPS, attitude) | High-rate video |
+| **Telem** | Serial / ELRS telem / SiK / Ethernet (optional via **Pi 3B+** router) | MAVLink (modes, spray, mission, GPS, attitude) | High-rate video; live ONNX on Pi |
 | **RTK** | Dedicated / NTRIP | RTCM | Sharing video Wi‑Fi |
 | **GS IPC** | localhost RTP + Unix sockets / shared logs | Frames, JSON events | Crossing to air except via telem |
 
@@ -196,18 +203,18 @@ Bundle these with FC `.bin` for any spray sortie that used auto pulses.
 
 ## 10. One-paragraph summary
 
-ELRS flies the aircraft; the FC owns avoidance and the pump hardware; the
-ground station only **decodes video**, runs **voice** and **live YOLOv8n-seg**,
-builds **clustered ATSP** missions from offline maps, and sends **mode / spray
-MAVLink on telemetry** through a single hub — WFB-NG never carries control —
-with fail-closed rules so touch-up spray on clean paddocks stays a precision
-convenience layer, not a second pilot.
+ELRS flies the **F450** airframe; a **Pixhawk-class** FC owns avoidance and the
+pump; a single **Pi 3B+** only bridges/logs MAVLink (not live YOLO); the
+ground station **decodes video**, runs **voice** and **live YOLOv8n-seg**,
+builds **clustered ATSP** missions, and sends **mode / spray MAVLink on
+telemetry** through a single hub — WFB-NG never carries control — with
+fail-closed rules so touch-up spray stays a precision convenience layer.
 
 ---
 
 ## Related docs
 
-- [SYSTEM-SPEC.md](SYSTEM-SPEC.md) · [LIVE-PIPELINE.md](LIVE-PIPELINE.md) ·
+- [AIRFRAME.md](AIRFRAME.md) · [SYSTEM-SPEC.md](SYSTEM-SPEC.md) · [LIVE-PIPELINE.md](LIVE-PIPELINE.md) ·
   [VOICE-CONTROL.md](VOICE-CONTROL.md) · [WEED-ID.md](WEED-ID.md) ·
   [WAYPOINT-OPT.md](WAYPOINT-OPT.md) · [STACK.md](STACK.md) ·
   [OBSTACLE-AVOIDANCE.md](OBSTACLE-AVOIDANCE.md) · [OPENIPC.md](OPENIPC.md)

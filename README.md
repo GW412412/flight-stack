@@ -11,6 +11,7 @@ Local research notes and starter configs for building a **precision agricultural
 |------|---------|
 | [docs/STACK.md](docs/STACK.md) | Full-stack summary: firmware → spray extensions → companion PC → GCS → base station |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | How modules connect: buses, authority, end-to-end data flow |
+| [docs/AIRFRAME.md](docs/AIRFRAME.md) | F450 + 8×3 + Pixhawk + Pi 3B+ mass/thrust/power |
 | [docs/SETUP-NOTES.md](docs/SETUP-NOTES.md) | Practical setup checklist and ordering of work |
 | [docs/WEED-ID.md](docs/WEED-ID.md) | Weed ID from ODM orthomosaics (models, datasets, K80/CPU inference) |
 | [docs/LIVE-PIPELINE.md](docs/LIVE-PIPELINE.md) | Live GS camera→ROI→ONNX→georeg→MAVLink spray pipeline |
