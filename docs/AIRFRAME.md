@@ -23,7 +23,7 @@ verify on a thrust stand and scales before chemical flight.
 | Motors (on hand) | **4× unused 980 KV** (never flown); fly on **6S preferred** (3S baseline / 4S available); **6S max** — **not 8S**; see **§5.1** |
 | ESCs | 4× **30–40 A** BLHeli_S / AM32, 4-in-1 or discrete (confirm **3S-low** cutoffs if flying the 980 KV set) |
 | Battery (4S path) | **4S LiPo 5000–6000 mAh** (≥25C); start **5000** for AUW |
-| Battery (980 KV path) | Caller has **4S** packs; may series to **6S (22.2 V) max**. **3S** = light baseline (marginal thrust). **6S** = **primary for flight testing**. **Do not use 8S** (above ESC/motor rating). Confirm ESC is **6S-capable**. |
+| Battery (980 KV path) | Custom **18650** packs (**650 mAh**/cell) and/or LiPo: fly **4S or 6S** only. **6S preferred** for thrust. **8S (8 cells in series) is forbidden**. See **§5.1** (series vs parallel math + BMS). Confirm ESC is **6S-capable**. |
 | FC | **Holybro Pixhawk 4** or **Cube Orange** (2 MB+ flash, sprayer + Lua) — **not** original Pixhawk1 / FMUv2 |
 | Firmware | **ArduCopter** current stable, build **with `AC_Sprayer`** |
 | RC | **ELRS 2.4 GHz** RX → FC `RCIN` / CRSF (or SBUS via ELRS PWM/CRSF bridge) |
@@ -136,7 +136,8 @@ conf 0.50 spray gate onto the Pi. Shadow ONNX on the Pi is optional R&D only.
 | **Dry subtotal (no batt, no liquid)** | **~1.2–1.7 kg** |
 | 4S 5000–6000 mAh pack (880–920 KV path) | 500–650 g |
 | 3S pack (980 KV, light baseline) | often **~350–500 g** (weigh actual) |
-| 6S pack (980 KV flight-test primary) | **two 3S in series** or **one 6S** / **4S+2S** as wired — typically **~550–750 g**; weigh the actual series harness |
+| 6S pack (980 KV flight-test primary) | LiPo **6S ~4000 mAh** or **18650 6S8P (~5200 mAh)** — often **~600–900 g+**; weigh the finished pack |
+| 4S pack (980 KV alternate) | LiPo **4S ~5200 mAh** or **18650 4SnP** — weigh actual |
 | **0.5 L mix** (concentrate) | **~500 g** |
 | **Estimated wet AUW** | **~2.4–3.0 kg** (planning mid **~2.7 kg**) |
 
@@ -163,58 +164,75 @@ without re-checking margin. If total static thrust **&lt; 4.0 kgf**, step up
 motor thrust bin or reduce other AUW — do **not** paper over a short margin.
 
 
-### 5.1 On-hand motors — **980 KV** on **3S / 4S / 6S** (unused set)
+### 5.1 On-hand motors — **980 KV** + **18650 / LiPo** packs (3S–6S only)
 
-Caller has a **never-flown** set of **980 KV** motors and **4S batteries** on
-hand. Propulsion for this set:
+Caller has a **never-flown** set of **980 KV** motors and is planning a custom
+pack from **18650 cells at 650 mAh each** (and also has conventional **4S**
+LiPo options). Voltage for this motor/ESC class must stay in **3S–6S**.
+**8S is off the table.**
 
-| Pack | Nominal V | How | Role |
-|------|-----------|-----|------|
-| **3S** | **11.1 V** | Single 3S | Light / simple **baseline** — thrust **marginal** at ~2.7 kg wet |
-| **4S** | **14.8 V** | Packs already owned | Usable middle step |
-| **6S** | **22.2 V** | Series **4S packs to 6S max** (or a native 6S) | **Primary for flight testing** |
-| **8S** | **29.6 V** | — | **Forbidden** — above safe ESC/motor rating for this set |
+#### “8 × 650 mAh” — series vs parallel (do not confuse)
 
-**ESC check (mandatory before 6S):** most hobby ESCs sold with ~980 KV / F450-class
-motors are **6S-capable**, but **read the ESC label** (max V / cell count). If the
-ESC is **3S–4S only**, do **not** series to 6S — swap ESCs first. **Never 8S.**
+| Wiring of **8 × 650 mAh** 18650s | What you actually get | Verdict for 980 KV |
+|----------------------------------|------------------------|--------------------|
+| **8 in series (8S1P)** | **8S** ≈ **29.6 V** nominal / **33.6 V** full | **Too high** for typical 3–6S ESCs and this motor set — **do not build / do not fly** |
+| **8 in parallel on a 3S pack (3S8P)** | **3S** at **8 × 650 = 5200 mAh** | Just a **bigger 3S** — more flight time, **same marginal thrust** as any other 3S |
+| Useful builds | **4S** or **6S** with enough parallels for capacity | **Recommended** — see below |
 
-#### RPM (unloaded theoretical ceiling = KV × V)
+So “eight 650s” is **not** automatically a good pack: in **series** it is dangerous
+**8S**; in **parallel on 3S** it only buys minutes, not thrust.
 
-| Pack | V (nominal) | Max RPM (approx.) |
-|------|-------------|-------------------|
-| 3S | 11.1 | **980 × 11.1 ≈ 10,878 ≈ 10,900 RPM** |
-| 4S | 14.8 | **980 × 14.8 ≈ 14,500 RPM** |
-| **6S** | **22.2** | **980 × 22.2 ≈ 21,756 ≈ 21,800 RPM** |
+#### Safe pack targets (980 KV flight testing)
+
+| Pack | Voltage | Example 18650 layout (650 mAh cells) | Role |
+|------|---------|--------------------------------------|------|
+| **3S** | 11.1 / 12.6 V | e.g. **3S8P** → **5200 mAh** | Light baseline only — **marginal** thrust at ~2.7 kg wet |
+| **4S** | 14.8 / 16.8 V | e.g. **4S6P–8P** → ~**3900–5200 mAh** | Good middle step; LiPo **4S ~5200 mAh** also fine |
+| **6S** | 22.2 / 25.2 V | e.g. **6S8P** → **5200 mAh** (48 cells) | **Primary for flight testing** — much more thrust headroom than 3S |
+| **8S** | 29.6 / 33.6 V | 8S anything | **Forbidden** for this stack |
+
+Ideal commercial LiPo shortcuts if skipping a huge 18650 build: **4S ~5200 mAh**
+or **6S ~4000 mAh** class packs (weigh and C-rate check; spray AUW still applies).
+
+#### RPM (unloaded theoretical = KV × V)
+
+| Pack | V nominal | Max RPM (approx.) |
+|------|-----------|-------------------|
+| 3S | 11.1 | **≈ 10,900 RPM** |
+| 4S | 14.8 | **≈ 14,500 RPM** |
+| **6S** | **22.2** | **≈ 21,800 RPM** |
 | 8S | 29.6 | ~29,000 — **do not run** |
 
-Full-charge voltages are higher (e.g. 6S ≈ 25.2 V → ~**24,700 RPM** unloaded).
-These are **unloaded ceilings**, not prop-loaded RPM.
+#### Thrust margin at ~2.7 kg wet (planning — stand mandatory)
 
-#### Thrust margin at ~2.7 kg wet AUW (planning — stand still mandatory)
+Same gates as §5: **≥ ~4.0 kgf** total (1.5:1), prefer **≥ ~4.5 kgf** (§9).
+Do not invent mid-stick kgf from KV alone.
 
-Same clearance gates as §5: want **≥ 1.5:1** → **≥ ~4.0 kgf** total static;
-acceptance **≥ ~4.5 kgf** (§9). Per-motor kgf at “50% stick” is **not**
-derivable from KV alone — do not invent a number.
+| Pack | vs 3S voltage | Expected margin at ~2.7 kg | Notes |
+|------|---------------|----------------------------|-------|
+| **3S** (even 5200 mAh) | 1× | **Marginal** — capacity ≠ thrust | 3S8P only adds time |
+| **4S** | ~1.3× | Better; verify on stand | Strong candidate |
+| **6S** | **2×** | **Much more headroom** if ESC/prop survive current | **Recommend for flight testing** |
+| **8S** | — | — | **Unsafe — off the table** |
 
-| Pack | Relative electrical headroom vs 3S | Expected hover / margin at ~2.7 kg | Notes |
-|------|--------------------------------------|--------------------------------------|-------|
-| **3S** | 1× (baseline) | **Marginal** — high hover %, soft climb; may fail 1.5:1 on 8×3 | Light pack helps AUW a little; not enough if stand is short |
-| **4S** | ~1.3× voltage | Better than 3S; still verify on stand | Uses packs already owned without series |
-| **6S** | **2×** voltage vs 3S | **Much more headroom** — hover % should drop; 1.5:1–2:1 class becomes realistic *if* props/ESCs survive the current | **Recommended primary for flight testing** |
-| **8S** | — | — | **Unsafe for this ESC/motor rating** |
+**6S caution:** ~21,800 RPM class on **8×3** props → high tip speed/current —
+start stand tests gently; watch ESC/motor temperature.
 
-**6S caution:** ~**21,800 RPM** class on **8-inch 3-blade** props means high tip
-speed and high current — start stand tests at **low throttle**, watch ESC/motor
-temperature, and abort if props flex or amps spike. More voltage headroom is
-not a free pass to full stick on first spin.
+#### 18650 build rules (safety)
 
-**AUW:** a 6S (or series) pack is **heavier** than a lone 3S — weigh the harness;
-re-check wet AUW before claiming the 2.7 kg mid-point.
+- Use a proper **BMS** (or balance lead + charger discipline) — **do not** fly an
+  unbalanced series string.
+- Join cells with **spot-welded nickel tabs** (or a known-good spot-weld service).
+  **Do not solder directly** onto 18650 cans (heat damage / vent risk).
+- Fuse or contactor the pack; strain-relieve the XT60/XT90; weigh the finished
+  pack into AUW (6S8P 18650 bricks are **heavy**).
+- **ESC check:** confirm every ESC is rated to **at least 6S** before a 6S first
+  spin. **Never 8S.**
 
-**Recommendation:** use **6S as the primary pack for flight testing** of the
-980 KV set. Keep **3S** only as a light bench/baseline. **Do not go to 8S.**
-Confirm every ESC is **rated to 6S** before series wiring.
+**Recommendation:** build or buy **4S or 6S** only — prefer a **6S ~4000–5200 mAh**
+class pack (e.g. **6S8P 18650 @ 650 mAh/cell → 5200 mAh**, or a **6S ~4000 mAh**
+LiPo / **4S ~5200 mAh** LiPo). Treat **3S8P 5200 mAh** as endurance-only.
+**Do not wire eight cells in series (8S).**
 
 **8-inch on F450 with sprayer payload:** **more viable at ~2.7 kg wet** than at
 the former ~3 kg / 1 L plan; still a **nimble touch-up** ship, not a heavy
@@ -395,7 +413,7 @@ OpenRTLS (optional): 4× DWM1000 anchors ──Ethernet/USB──► GS solver
 
 v1 airframe is a **nimble F450 / Flamewheel 450** on **8-inch 3-blade** props
 with **2216-class ~880–920 KV on 4S** as the primary power lock, or the
-**on-hand unused 980 KV motors** as an alternate power path (**6S primary for flight testing**, ~**21,800 RPM** theoretical max at 22.2 V; 3S is light but marginal; **never 8S**; ESC must be 6S-rated; stand-test before chemical), a **Pixhawk 4 or Cube Orange** FC (not original Pixhawk1) running
+**on-hand unused 980 KV motors** with **4S/6S packs only** (**6S preferred**, ~**21,800 RPM** at 22.2 V; **18650 650 mAh** cells OK as **4S/6S** builds with BMS + spot-weld — **8× in series = 8S forbidden**; **8× parallel on 3S = 5200 mAh** endurance only; ESC 6S-rated; stand-test before chemical), a **Pixhawk 4 or Cube Orange** FC (not original Pixhawk1) running
 ArduCopter **`AC_Sprayer`** (`DO_SPRAYER` / aux **15**) and **ELRS** RC, plus a
 single **Pi 3B+** for MAVLink/logging only — **not** for live YOLOv8n-seg (CPU
 /~1 GB RAM cannot meet the GS live-ID FPS/latency budget) — at roughly
