@@ -33,6 +33,7 @@ verify on a thrust stand and scales before chemical flight.
 | RTK (air) | **Holybro H-RTK F9P Rover** (~**USD 205**, holybro.com) → Pixhawk GPS UART |
 | RTK (ground) | **Holybro H-RTK F9P Base** (~**USD 259**) as **dedicated local base** — not third-party NTRIP |
 | RTK pair cost | ~**USD 464–500** (rover + base; antennas as shipped; tripod extra) |
+| OpenRTLS (optional) | **UWB** DWM1000-class anchors + air tag — see §6.1; does **not** replace RTK |
 
 No hex conversion, no Jetson, no second Pi. RTK uses a **local Holybro base** so remote
 paddocks without a nearby NTRIP mount still get centimetre fixes.
@@ -124,6 +125,7 @@ conf 0.50 spray gate onto the Pi. Shadow ONNX on the Pi is optional R&D only.
 | Pixhawk 4 / Cube + cables | 60–100 g |
 | GPS / compass + mast | 40–60 g |
 | ELRS RX + antenna | 5–15 g |
+| OpenRTLS tag + ant (optional) | 5–20 g |
 | Pi 3B+ + case + serial hat + SD | 70–100 g |
 | Thinker + IMX335 + 8812AU + antennas | 40–80 g |
 | 0.5 L tank empty + mounts | 80–150 g |
@@ -202,6 +204,69 @@ AUW table (~40–60 g module class; helix adds a little — weigh the actual SKU
 
 ---
 
+## 6.1 OpenRTLS (optional) — UWB precision near trees / structures
+
+**Status:** optional add-on, not a v1 lock. RTK (Holybro F9P) remains the primary
+outdoor centimetre source. OpenRTLS (also spelled Open-RTLS; open-source UWB RTLS
+families such as [UWB-Open-RTLS-MCU](https://github.com/demianzenkov/UWB-Open-RTLS-MCU)
+/ POSIT.PRO-class stacks) fills gaps where sky view is poor — tree lines, sheds,
+tank stands — and RTK Fix drops to float or single.
+
+Caller also said **“and also”** — leave a slot for a later follow-up item under
+this same radios / precision heading (do not treat OpenRTLS as the last word).
+
+### What it is
+
+| Piece | Role |
+|-------|------|
+| **Anchors** (≥ **4**) | Fixed Decawave/Qorvo **DWM1000**-class UWB nodes around the work zone; survey their positions once |
+| **Tag** (1 on airframe) | Mobile UWB node; TWR/TDOA ranging against anchors |
+| **Solver** | Anchor Ethernet/USB → small PC or **Pi on the GS** runs the OpenRTLS / POSIT-style server; tag pose out at ~10 Hz class |
+| **Band** | UWB (~3.5–6.5 GHz class for DW1000) — keep antennas clear of Thinker **5 GHz** WFB and ELRS **2.4** |
+
+Typical published figures for this class of kit: ranging on the order of **tens of metres
+per hop** (often cited ~**30 m** line-of-sight for DWM1000 DIY), position error down
+toward **~10 cm** in good TWR geometry. That is **not** whole-paddock coverage with
+four anchors on a 5-acre block — place the tetrahedron (or more anchors) around the
+**degraded-GPS corridor** (tree belt, barn edge), not as a RTK replacement for open sky.
+
+### Minimal cost (AliExpress DWM1000 DIY)
+
+| Item | Qty | Approx. each (USD) | Subtotal |
+|------|-----|--------------------|----------|
+| DWM1000 breakout / cheap STM32+DWM1000 node | **4** anchors + **1** tag | **~$15–25** | **~$75–125** |
+| USB power / Ethernet dongles / cases / masts | — | — | **~$25–75** |
+| **Minimal kit ballpark** | | | **~$100–200** |
+
+PoE industrial anchors and a dedicated RTLS server push cost up; the figures above
+are the **cheap AliExpress module** path for trials. Weigh the air tag (~few grams
+to ~20 g with antenna) into AUW when fitted.
+
+### How position reaches the Pixhawk (alongside RTK)
+
+Preferred v1 path (fits the existing **Pi 3B+** companion role):
+
+1. Anchors → GS (or paddock-edge) OpenRTLS server computes tag XYZ in a local frame
+   surveyed relative to the RTK base / paddock origin.
+2. Air **tag** UART/USB → **Pi 3B+** (or GS forwards pose over **SiK / ELRS telem**).
+3. Pi (or GS hub) emits MAVLink **`VISION_POSITION_ESTIMATE`** (or **`GPS_INPUT`** /
+   external-nav equivalent) into the FC.
+4. ArduPilot **EKF3** fuses UWB with the F9P RTK when both are healthy; when RTK
+   degrades near canopy, raise UWB innovation weight / use as horizontal aid only
+   after a bench tune — **never** let UWB override ELRS or kill RC authority.
+
+**Do not** send OpenRTLS traffic over WFB-NG video RF. Keep it on UART + telem /
+Ethernet like RTCM and MAVLink.
+
+### Acceptance when fitted
+
+1. Four anchors surveyed; tag range checks to each anchor in open air.  
+2. SITL or bench: `VISION_POSITION_ESTIMATE` (or chosen msg) appears in MAVProxy.  
+3. Hover under partial sky: RTK float + UWB still yields usable horizontal for
+   georeg logging (spray gate still needs LIVE-PIPELINE georeg rules).
+
+---
+
 ## 7. Power budget (approximate)
 
 | Load | Voltage | Current / power (order of magnitude) |
@@ -212,6 +277,7 @@ AUW table (~40–60 g module class; helix adds a little — weigh the actual SKU
 | Pi 3B+ (idle bridge) | 5 V (≥2.5 A supply) | **~0.4–0.7 A**; **1–1.5 A** if thrashing ONNX |
 | Thinker + 8812AU TX | 2–6S / BEC per OpenIPC | Follow SYSTEM-SPEC; treat as **several watts to tens of watts** at legal TX power |
 | ELRS RX | 5 V | **&lt; 0.2 A** |
+| OpenRTLS air tag (if fitted) | 5 V / Lipo | **&lt; 0.2 A** typical |
 | Spray pump (pulsed) | Pack or BEC | Bench-measure; budget **2–8 A** while on |
 | OA lidars | 5 V | **&lt; 0.3 A** combined |
 
@@ -241,6 +307,10 @@ Pixhawk 4 / Cube (Copter + AC_Sprayer + OA)
 Holybro F9P Base ──(tripod / vehicle roof)──► GCS RTK Inject ──telem──► FC
 
 Thinker video ──WFB-NG 5 GHz──► GS decode  ← NOT via Pi
+
+OpenRTLS (optional): 4× DWM1000 anchors ──Ethernet/USB──► GS solver
+                     air tag ──UART──► Pi ──VISION_POSITION_ESTIMATE──► FC
+                     (fuse with RTK in EKF3; not over WFB-NG)
 ```
 
 ---
@@ -255,6 +325,8 @@ Thinker video ──WFB-NG 5 GHz──► GS decode  ← NOT via Pi
 6. ELRS failsafe → pump off (Lua / params per SETUP-NOTES).
 7. RTK: base survey-in at paddock edge; rover shows **RTK Fixed**; confirm
    1–2 cm class before trusting live georeg / waypoint revisits.
+8. If OpenRTLS fitted: four anchors surveyed; UWB pose reaches FC via Pi/telem;
+   confirm fusion under tree-line shade without fighting ELRS.
 
 ---
 
@@ -268,7 +340,9 @@ single **Pi 3B+** for MAVLink/logging only — **not** for live YOLOv8n-seg (CPU
 **~2.7 kg wet AUW** with a **0.5 L** concentrate tank (improved 8×3 thrust
 margin vs the old 1 L / ~3 kg plan; stand-test still mandatory), **Holybro
 H-RTK F9P Rover + local F9P Base** (~USD 464–500) for 1–2 cm RTK without
-NTRIP, keeping the stack to one FC and one companion.
+NTRIP, with **optional OpenRTLS (DWM1000 UWB)** as a local centimetre aid near
+trees/structures where RTK degrades (~$100–200 minimal 4-anchor+tag kit), keeping
+the stack to one FC and one companion.
 
 ---
 

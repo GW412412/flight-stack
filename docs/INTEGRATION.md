@@ -41,6 +41,7 @@ commands.
 | Obstacle / terrain | [OBSTACLE-AVOIDANCE.md](OBSTACLE-AVOIDANCE.md) | **FC only** (v1) | Rangefinders → PRX / OA |
 | Stack / GCS / RTK | [STACK.md](STACK.md), [SETUP-NOTES.md](SETUP-NOTES.md) | GS + base | MAVLink + RTCM |
 | Airframe / companion | [AIRFRAME.md](AIRFRAME.md) | **Pixhawk-class FC** + **Pi 3B+** (only companions) | ELRS RC; UART MAVLink; video bypasses Pi |
+| OpenRTLS (optional UWB) | [AIRFRAME.md](AIRFRAME.md) §6.1 | GS solver + air tag; anchors at zone edge | UWB ranges → pose → Pi/telem `VISION_POSITION_ESTIMATE` (not WFB) |
 
 ---
 
@@ -102,6 +103,10 @@ commands.
  │  (pixels only — does not transit the Pi)                         │
  │                                                                  │
  │  RTK GPS ◄── separate radio / NTRIP (not on video Wi‑Fi)         │
+ │                                                                  │
+ │  OpenRTLS tag (opt.) ──UART──► Pi → VISION_POSITION_ESTIMATE     │
+ │  ←── UWB ── 4× DWM1000 anchors ──Ethernet──► GS solver           │
+ │  (fuse with RTK near trees; not on video Wi‑Fi)                  │
  └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -115,12 +120,38 @@ commands.
 | **Video** | WFB-NG 5 GHz | H.264 (and GS restream) | RC, MAVLink spray, RTK |
 | **Telem** | Serial / ELRS telem / SiK / Ethernet (optional via **Pi 3B+** router) | MAVLink (modes, spray, mission, GPS, attitude) | High-rate video; live ONNX on Pi |
 | **RTK** | Dedicated / NTRIP | RTCM | Sharing video Wi‑Fi |
+| **OpenRTLS (optional)** | UWB (DWM1000) + Ethernet/UART | Local XYZ pose → MAVLink external nav | Video RF; replacing RTK in open sky |
 | **GS IPC** | localhost RTP + Unix sockets / shared logs | Frames, JSON events | Crossing to air except via telem |
 
 One **MAVLink endpoint** on the GS (MAVProxy or a small pymavlink hub) fans
 out to voice, live ID, mission tools, and the operator GCS. Do not open
 parallel competing spray writers without a mutex / single “spray arbiter”
 process.
+
+---
+
+## 4.1 OpenRTLS (optional) — UWB aid beside RTK
+
+**Optional** precision layer using open-source **OpenRTLS / Open-RTLS** UWB stacks
+(DWM1000 anchors + tag). Complements Holybro F9P RTK when the rover loses Fix
+near trees or structures. Details and cost: [AIRFRAME.md](AIRFRAME.md) §6.1.
+
+| Link | Medium | Role |
+|------|--------|------|
+| ELRS | 2.4 GHz | RC (unchanged authority) |
+| WFB-NG | 5 GHz | Video pixels only |
+| SiK / ELRS telem | Sub‑GHz / 2.4 telem | MAVLink + RTCM inject |
+| RTK | F9P base → GCS → telem | Primary outdoor cm GPS |
+| **OpenRTLS** | UWB + Ethernet/UART | Local cm-class pose in GNSS-denied pockets |
+
+**Feed path:** 4+ anchors surveyed around the problem zone → GS OpenRTLS solver
+→ air tag UART into **Pi 3B+** (or pose over telem) → MAVLink
+`VISION_POSITION_ESTIMATE` (or `GPS_INPUT`) → EKF3 alongside RTK.
+Minimal AliExpress DWM1000 kit: **4 anchors + 1 tag ≈ $100–200**.
+
+**Follow-up slot:** caller indicated **“and also …”** — another radios /
+precision item may land next; keep this subsection open for that addition
+without renumbering the whole integration map.
 
 ---
 
@@ -171,6 +202,7 @@ does **not** enable the pump directly (avoids accidental spray from “yes”).
 5. OA / fence events are **FC-side**; GS must not fight BendyRuler with
    aggressive Guided setpoints (slow down or Loiter on voice/RC).  
 6. No module may open a second path to motor kill — hardware/RC only.
+7. OpenRTLS / UWB pose is an **aid only** — never a substitute for ELRS; if UWB drops, fall back to RTK/GPS and slow or Loiter near canopy.
 
 ---
 
@@ -209,6 +241,7 @@ ground station **decodes video**, runs **voice** and **live YOLOv8n-seg**,
 builds **clustered ATSP** missions, and sends **mode / spray MAVLink on
 telemetry** through a single hub — WFB-NG never carries control — with
 fail-closed rules so touch-up spray stays a precision convenience layer.
+Optional **OpenRTLS** UWB can fuse with RTK near canopy without riding video RF.
 
 ---
 
