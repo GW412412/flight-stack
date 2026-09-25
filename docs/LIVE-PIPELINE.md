@@ -14,6 +14,26 @@ explicitly revised.
 
 ---
 
+## Operational context (touch-up paddocks)
+
+This live pipeline is for **touch-up spraying on otherwise clean paddocks**, not
+blanket or dense-infestation work.
+
+| Fact | Design implication |
+|------|--------------------|
+| Typical load | **~25 weeds** scattered across a **~5-acre (~2 ha)** paddock |
+| Pattern | Peppered **localised patches**, long stretches of clean pasture between |
+| Chemical | A **1 L tank is effectively unlimited** at this density (~25 × ≤5 mL ≪ 1 L); dose conservatism is **stewardship** (less drift, less scorched grass), not endurance |
+| Detection priority | **High precision over high recall** — a false positive wastes chemical and pilot time on a clean paddock |
+| Offline review | Any **missed weed** on a clean-paddock spot-check is a **failed pass** (goal is **zero escapes**) |
+| Routing | Waypoint optimiser must **cluster** nearby targets into short efficient passes, not long zig-zag traverses across empty ground ([WAYPOINT-OPT.md](WAYPOINT-OPT.md)) |
+
+Live auto-spray therefore locks **`conf ≥ 0.50`**. Misses that slip the live gate
+are recovered by a second **clustered waypoint** pass from the offline map, not
+by lowering confidence until every grass clump triggers.
+
+---
+
 ## 0. Where it runs
 
 | Piece | Location |
@@ -80,9 +100,9 @@ unless the ONNX metadata says otherwise — match the export used in labeling.
 | Model | **YOLOv8n-seg** ONNX (nano segmentation) |
 | Runtime | **ONNX Runtime CPU** (40 threads max); **K80 CUDA EP only** if a verified CUDA 11 + sm_37 stack is already working on the GS |
 | `imgsz` | **640** |
-| `conf` | **0.35** (stricter than offline pre-label 0.25 — live spray gate) |
+| `conf` | **0.50** (precision-first live gate; offline pre-label stays 0.25) |
 | `iou` | **0.5** (NMS) |
-| Max det | **50** per ROI |
+| Max det | **20** per ROI (sparse touch-up; was 50 for dense) |
 | Classes | DeepWeeds-aligned IDs 0–7; treat class 8 / background as non-spray. If ops collapsed labels to single `rosette`, spray any weed class ≥ conf |
 
 **Outputs used:** instance mask (or polygon), box, class id, confidence,
@@ -146,7 +166,7 @@ outside the boom envelope (detection not under sprayable path).
 
 1. Live ID enabled by operator (RC aux or GS toggle).
 2. Video link healthy (not in SYSTEM-SPEC freeze / stills-only mode).
-3. Detection `conf ≥ 0.35`.
+3. Detection `conf ≥ 0.50` (touch-up precision gate).
 4. Georeg \(g \ge 0.70\).
 5. Vehicle armed, not in failsafe / RTL / Land (unless ops explicitly allow).
 6. Ground speed ≥ `SPRAY_SPEED_MIN` (FC param) **or** use timed pulse mode
@@ -156,7 +176,8 @@ outside the boom envelope (detection not under sprayable path).
 ### 4.2 Dose from canopy area
 
 Mask area in ROI pixels → ground area using GSD at AGL. Work in **cm²** for
-the dose law (spot pulses must stretch a ~1 L tank across many weeds):
+the dose law. At ~25 weeds / 5 acres a 1 L tank is not the constraint — small
+pulses are for **chemical stewardship** (less waste and pasture burn):
 
 \[
 A_{\mathrm{cm}^2} = 10^{4}\, N_{\mathrm{px}} \cdot \left(\frac{h \cdot s_{\mathrm{px}}}{f}\right)^2
@@ -183,8 +204,8 @@ V_{\mathrm{mL}} = \mathrm{clamp}\bigl(V_0 + k \cdot A_{\mathrm{cm}^2},\; V_{\min
 
 If \(A_{\mathrm{cm}^2} < A_{\min}\), **skip** (no command). Otherwise apply the
 clamp above. Example: a **2 cm²** rosette → \(0.5 + 2.5\times 2 = 5.0\) mL
-(hits cap); a **0.2 cm²** speck is skipped; ~**200** full 5 mL pulses per
-litre worst case, far more when most weeds are sub-cap.
+(hits cap); a **0.2 cm²** speck is skipped. At ~25 weeds even full 5 mL pulses
+use only ~125 mL — tank endurance is not the reason for the cap.
 
 **Pump on-time** from calibrated flow \(Q\) (mL/s) at current `SPRAY_PUMP_*`
 operating point (bench-measure once):
@@ -217,6 +238,20 @@ finer \(y\) bins; v1 logs it but does not require >3 valves.
 Hash world cell at **0.5 m** resolution. After an accept, **suppress** new
 auto-spray for that cell for **3.0 s** (or until the aircraft has moved
 **> 1.0 m** from the cell centre). Prevents 15 Hz re-triggers on one plant.
+
+### 4.5 Sparse routing (waypoint / mission mode)
+
+When spraying from a **precomputed map** (offline GeoJSON → mission) rather than
+pure opportunistic live pulses, feed [WAYPOINT-OPT.md](WAYPOINT-OPT.md) with
+**cluster-aware** ordering:
+
+1. DBSCAN / radius cluster (~**15–25 m**) so a localised patch is one short pass.
+2. Solve ATSP **within** each cluster, then order clusters (TSP on centroids).
+3. Prefer prize-collecting only if time-limited; at ~25 weeds / 5 acres the
+   default is **visit all** clusters — empty pasture is skipped by construction.
+
+Live opportunistic mode still pulses when a gated detection is under the boom;
+clustering mainly shapes the **scout → map → revisit** mission.
 
 ---
 
@@ -259,7 +294,7 @@ review (`logs/live-pipeline.jsonl`).
 |-----------|--------|
 | Georeg \(g < 0.70\) | No auto-spray; log detection; optional HUD warn |
 | Telem age > 80 ms | Drop frame; no command |
-| Video link degraded (SYSTEM-SPEC steps 1–3) | Raise live conf gate to **0.50**; keep spray if still gated |
+| Video link degraded (SYSTEM-SPEC steps 1–3) | Raise live conf gate to **0.60**; keep spray if still gated |
 | Video step 4 (stills / freeze live ID) or RF loss | **Pump off immediately**; disable live auto-spray; continue ELRS; spray only from **precomputed waypoint mission** if already uploaded |
 | Infer timeout (> 2× budget) | Skip frame; after 5 consecutive skips → disable live auto-spray and speak/log `Live ID stalled` |
 | Operator RC sprayer switch off | Hard inhibit — GS must not override |
@@ -272,13 +307,19 @@ review (`logs/live-pipeline.jsonl`).
 ## 7. Offline acceptance bar before live ops
 
 Live auto-spray is **authorised only after** the same weights pass offline
-eval on a **held-out paddock** tile set (not used in training):
+eval on a **held-out clean paddock** tile set (not used in training):
 
 | Metric | Minimum |
 |--------|---------|
 | **mAP50** (instance seg, weed classes) | **≥ 0.80** |
-| **Recall** (instance, conf 0.35) | **≥ 0.85** |
-| False-positive rate on bare-pasture tiles | **≤ 5%** of tiles with any FP at conf 0.35 |
+| **Recall** (instance, at **conf 0.50**) | **≥ 0.85** on the held-out set |
+| False-positive rate on bare-pasture tiles | **≤ 2%** of tiles with any FP at **conf 0.50** (tighter: clean paddocks punish FPs) |
+| **10% miss spot-check** (human) | **Zero escapes** — any missed weed in the sampled clean-paddock tiles is a **failed pass**; retrain / relabel before live ops |
+
+The spot-check rule overrides a “good enough” average recall: on otherwise clean
+paddocks the operational goal is **no escapes**, so one miss in the 10% sample
+fails the model for live authorisation (same spirit as LABELING-WORKFLOW review,
+stricter here).
 
 Record the eval run (date, commit hash, `data.yaml`, metrics) under
 `data/models/<name>/EVAL.md`. Until that file exists with passing numbers,
@@ -294,7 +335,7 @@ IMX335 → Thinker H.264 720p30 → WFB-NG 5 GHz
       → GS decode (RTP/RTSP)
       → telem-synced frame
       → boom ROI → letterbox 640 → /255 NCHW
-      → YOLOv8n-seg ONNX (conf=0.35, iou=0.5)
+      → YOLOv8n-seg ONNX (conf=0.50, iou=0.5)
       → NMS / area filter
       → georeg (GPS + attitude + K + mount + AGL) → g
       → if conf & g gates: dose V(A) → t_on → section s
@@ -306,14 +347,17 @@ IMX335 → Thinker H.264 720p30 → WFB-NG 5 GHz
 
 ## 9. One-paragraph summary
 
-Live weed spray for this project runs **entirely on the ground station**:
-decode the Thinker/IMX335 WFB-NG stream, crop a boom ROI, letterbox to
-**640**, run **YOLOv8n-seg ONNX** at **conf 0.35 / iou 0.5**, project each
-mask to WGS84 with GPS/attitude/intrinsics/AGL (require georeg confidence
-≥ 0.70), dose \(V = \mathrm{clamp}(0.5 + 2.5\,A_{\mathrm{cm}^2},\, 0.2,\, 5)\) mL and pulse the nearest of
-**3 boom sections** via **`MAV_CMD_DO_SPRAYER` on telemetry** inside a
-**≤ 150 ms** budget, failing closed on bad georeg or link loss — and only
-after offline **mAP50 ≥ 0.80** and **recall ≥ 0.85** on a held-out paddock.
+Live weed spray for this project is **touch-up on clean paddocks** (~**25 weeds
+/ 5 acres**, localised patches): it runs **entirely on the ground station**,
+decodes the Thinker/IMX335 WFB-NG stream, crops a boom ROI, letterboxes to
+**640**, runs **YOLOv8n-seg ONNX** at **conf 0.50 / iou 0.5** (precision over
+recall), projects each mask to WGS84 with GPS/attitude/intrinsics/AGL (georeg
+≥ 0.70), doses \(V = \mathrm{clamp}(0.5 + 2.5\,A_{\mathrm{cm}^2},\, 0.2,\, 5)\) mL for
+**stewardship** (1 L is unlimited at this density), pulses the nearest of
+**3 boom sections** via **`MAV_CMD_DO_SPRAYER` on telemetry** inside **≤ 150 ms**,
+clusters sparse waypoint revisits, fails closed on bad georeg or link loss, and
+authorises live ops only after offline **mAP50 ≥ 0.80**, **recall ≥ 0.85** at
+conf 0.50, and a **zero-escape** 10% miss spot-check on a held-out clean paddock.
 
 ---
 
