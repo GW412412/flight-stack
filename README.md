@@ -62,3 +62,5 @@ Local research notes and starter configs for building a **precision agricultural
 ## License
 
 MIT for these research notes (see [LICENSE](LICENSE)). Upstream projects keep their own licenses.
+
+- [Labeling workflow](docs/LABELING-WORKFLOW.md)
