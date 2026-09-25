@@ -33,3 +33,9 @@ assistant — it does not replace ELRS RC authority.
 ## Ports
     SITL -> MAVProxy out :14550  (QGC / anything)
     MAVProxy -> middleware :14551  (udp:127.0.0.1:14551)
+
+## LIVE-PIPELINE locks (enforced in code)
+- Tank default **0.5 L** concentrate; dose `V = clamp(0.25 + 1.25*A_cm2, 0.1, 2.5)` mL
+- Detection gate **conf >= 0.50**; live spray also needs **georeg >= 0.70**
+- **Only** `middleware/mavlink_hub.py` sends `MAV_CMD_DO_SPRAYER`
+- Ollama `agent.py` is **advisory**; ELRS remains hard RC authority

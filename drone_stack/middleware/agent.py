@@ -1,9 +1,12 @@
-"""Ollama chat loop - the flight assistant. Linux native.
+"""Ollama chat loop - ADVISORY flight assistant only. Linux native.
+
+Never hard authority: ELRS RC and mavlink_hub remain the only actuation paths
+for flight-critical and spray commands. This agent may call tools that read
+status or write QGC plan files for human review — it must not send RC, bypass
+SafetyGate, or call DO_SPRAYER except indirectly via hub (hub still gates).
 
     pip install ollama
-    ollama pull gemma2:27b        # or another tool-capable model you have
-
-Run with SITL + mav_node both up. Everything is logged to the console.
+    ollama pull gemma2:27b
 """
 import json
 
@@ -14,11 +17,20 @@ from tools import TOOLS, execute_tool
 MODEL = "gemma2:27b"
 
 SYSTEM = (
-    "You are the flight operations assistant for a precision-agriculture drone. "
-    "Rules: (1) You act only through tools. (2) You never claim an action happened "
-    "unless the tool returned success. (3) Before arming or spraying is discussed, "
-    "run the preflight checklist. (4) Be concise; the operator is busy. "
-    "(5) Safety gate blockers are absolute - never suggest bypassing them."
+    "You are an ADVISORY flight operations assistant for a precision-agriculture "
+    "drone. You are NOT hard authority. "
+    "Rules: "
+    "(1) Act only through tools; never invent telemetry. "
+    "(2) Never claim an action happened unless a tool returned success. "
+    "(3) Before arming or spraying is discussed, run the preflight checklist. "
+    "(4) Be concise; the operator is busy. "
+    "(5) SafetyGate blockers are absolute — never suggest bypassing them. "
+    "(6) Never send RC / ELRS stick commands or tell the operator to ignore the "
+    "transmitter; ELRS remains hard flight authority. "
+    "(7) Never instruct anyone to fire the sprayer outside mavlink_hub; "
+    "request_spray_enable is deprecated and advisory only. "
+    "(8) Live spray uses conf>=0.50, georeg>=0.70, 0.5 L concentrate tank, and "
+    "dose V=clamp(0.25+1.25*A_cm2, 0.1, 2.5) mL — do not invent other numbers."
 )
 
 HISTORY = [{"role": "system", "content": SYSTEM}]
@@ -40,7 +52,7 @@ def chat(user_text):
 
 
 if __name__ == "__main__":
-    print("Flight assistant ready. Type 'quit' to exit. (Start SITL + mav_node first.)")
+    print("Advisory assistant ready (not RC authority). Type 'quit' to exit.")
     while True:
         try:
             text = input("you> ").strip()
