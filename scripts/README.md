@@ -29,3 +29,20 @@ The script runs until the stream ends; press **Ctrl-C** to stop cleanly. For a q
 ```bash
 ffmpeg -i "rtsp://USER:PASS@HOST/stream" -vf fps=1 -q:v 2 frames/frame_%06d.jpg
 ```
+
+## Simulation stubs (SITL / HIL)
+
+See [docs/SIMULATION.md](../docs/SIMULATION.md) for the normative spec.
+
+- `sim_weed_field.py` — random ~25-weed / ~5-acre GeoJSON generator
+- `spray_sim_logger.py` — MAVLink `DO_SPRAYER` / aux-15 JSONL logger (`--demo` offline)
+- `plot_spray_coverage.py` — 2D coverage plot (optional `--three-d`)
+
+```bash
+python3 scripts/sim_weed_field.py --seed 42 --out data/sim/weed_field.geojson
+python3 scripts/spray_sim_logger.py --demo --out logs/sim/spray_events.jsonl
+python3 scripts/plot_spray_coverage.py \
+  --weeds data/sim/weed_field.geojson \
+  --events logs/sim/spray_events.jsonl \
+  --out logs/sim/coverage_2d.png
+```
