@@ -19,6 +19,7 @@ Local research notes and starter configs for building a **precision agricultural
 | [docs/OPENIPC.md](docs/OPENIPC.md) | OpenIPC live video / Wi‑Fi camera research (RTSP, FPV, ELRS coexistence) |
 | [docs/OPENIPC-CAMERAS.md](docs/OPENIPC-CAMERAS.md) | Lightweight OpenIPC camera / AIO modules for spot-spray (sensors, weight, RTSP) |
 | [docs/SYSTEM-SPEC.md](docs/SYSTEM-SPEC.md) | Locked camera + radio + live video latency budget |
+| [docs/LINK-CONSOLIDATION.md](docs/LINK-CONSOLIDATION.md) | Can RC+video+telem+UWB share radios? consolidation analysis |
 | [docs/OBSTACLE-AVOIDANCE.md](docs/OBSTACLE-AVOIDANCE.md) | Collision/obstacle avoidance for low-altitude Guided spray (sensors, OA_TYPE, FC-only kit) |
 | [config/](config/) | Example parameter snippets (marked as examples) |
 | [scripts/](scripts/) | Example Lua sketch and live-stream frame extraction |
