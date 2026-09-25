@@ -20,10 +20,10 @@ verify on a thrust stand and scales before chemical flight.
 | Frame | **F450-class / Flamewheel 450** (≈450 mm motor-to-motor), lightweight X |
 | Props | **8-inch, 3-blade** (matched CW/CCW set) |
 | Motors (primary lock) | **4× 2216-class ~880–920 KV** on **4S** (fits F450 mounts; see thrust §5) |
-| Motors (on hand) | **4× unused 980 KV**, **3S (11.1 V) compatible**, never flown — alternate power path; see **§5.1** |
+| Motors (on hand) | **4× unused 980 KV** (never flown); fly on **6S preferred** (3S baseline / 4S available); **6S max** — **not 8S**; see **§5.1** |
 | ESCs | 4× **30–40 A** BLHeli_S / AM32, 4-in-1 or discrete (confirm **3S-low** cutoffs if flying the 980 KV set) |
 | Battery (4S path) | **4S LiPo 5000–6000 mAh** (≥25C); start **5000** for AUW |
-| Battery (3S path) | **3S LiPo 5000–6000 mAh** (≥25C) when using the **980 KV** motors — **single 3S pack**, no 4S/6S conversion |
+| Battery (980 KV path) | Caller has **4S** packs; may series to **6S (22.2 V) max**. **3S** = light baseline (marginal thrust). **6S** = **primary for flight testing**. **Do not use 8S** (above ESC/motor rating). Confirm ESC is **6S-capable**. |
 | FC | **Holybro Pixhawk 4** or **Cube Orange** (2 MB+ flash, sprayer + Lua) — **not** original Pixhawk1 / FMUv2 |
 | Firmware | **ArduCopter** current stable, build **with `AC_Sprayer`** |
 | RC | **ELRS 2.4 GHz** RX → FC `RCIN` / CRSF (or SBUS via ELRS PWM/CRSF bridge) |
@@ -135,7 +135,8 @@ conf 0.50 spray gate onto the Pi. Shadow ONNX on the Pi is optional R&D only.
 | Misc (pads, ties, OA lidars light kit) | 100–180 g |
 | **Dry subtotal (no batt, no liquid)** | **~1.2–1.7 kg** |
 | 4S 5000–6000 mAh pack (880–920 KV path) | 500–650 g |
-| 3S 5000–6000 mAh pack (980 KV path) | often **~350–500 g** (weigh the actual pack) |
+| 3S pack (980 KV, light baseline) | often **~350–500 g** (weigh actual) |
+| 6S pack (980 KV flight-test primary) | **two 3S in series** or **one 6S** / **4S+2S** as wired — typically **~550–750 g**; weigh the actual series harness |
 | **0.5 L mix** (concentrate) | **~500 g** |
 | **Estimated wet AUW** | **~2.4–3.0 kg** (planning mid **~2.7 kg**) |
 
@@ -162,44 +163,58 @@ without re-checking margin. If total static thrust **&lt; 4.0 kgf**, step up
 motor thrust bin or reduce other AUW — do **not** paper over a short margin.
 
 
-### 5.1 On-hand motors — **980 KV on 3S** (unused set)
+### 5.1 On-hand motors — **980 KV** on **3S / 4S / 6S** (unused set)
 
-Caller has a **never-flown** set of **980 KV** motors specified **3S (11.1 V)
-compatible**. Eligible as an **alternate** power path on the same F450 + **8×3**
-props so the build can stay on a **single 3S LiPo** (lighter pack, simpler —
-**no 4S/6S conversion**).
+Caller has a **never-flown** set of **980 KV** motors and **4S batteries** on
+hand. Propulsion for this set:
 
-| Quantity | Value | Notes |
-|----------|-------|-------|
-| KV | **980** | As labelled on the unused set |
-| Pack | **3S nominal 11.1 V** (≈12.6 V full charge) | Match ESC low-voltage cutoff to 3S |
-| Theoretical max RPM (unloaded) | **980 × 11.1 ≈ 10,878 ≈ 10,900 RPM** | At full charge: **980 × 12.6 ≈ 12,350 RPM** — unloaded ceiling, not prop-loaded RPM |
-| Props | Same locked **8-inch 3-blade** | Confirm motor shaft / hub fit before first spin |
-| Electrical simplicity | **One 3S pack** | No series packs or buck/boost for the propulsion bus |
+| Pack | Nominal V | How | Role |
+|------|-----------|-----|------|
+| **3S** | **11.1 V** | Single 3S | Light / simple **baseline** — thrust **marginal** at ~2.7 kg wet |
+| **4S** | **14.8 V** | Packs already owned | Usable middle step |
+| **6S** | **22.2 V** | Series **4S packs to 6S max** (or a native 6S) | **Primary for flight testing** |
+| **8S** | **29.6 V** | — | **Forbidden** — above safe ESC/motor rating for this set |
 
-**Thrust (planning only — not measured on this set):**
+**ESC check (mandatory before 6S):** most hobby ESCs sold with ~980 KV / F450-class
+motors are **6S-capable**, but **read the ESC label** (max V / cell count). If the
+ESC is **3S–4S only**, do **not** series to 6S — swap ESCs first. **Never 8S.**
 
-Static thrust depends on **prop pitch, motor mass, ESC timing**, and cooling.
-**KV × voltage alone cannot** give a trustworthy mid-throttle kilogram figure,
-and ESC “50% stick” is **not** half RPM. Until a thrust-stand run exists for
-*this* 980 KV + 8×3 + ESC combo:
+#### RPM (unloaded theoretical ceiling = KV × V)
 
-- Do **not** invent a per-motor kgf at 50% throttle from theory.
-- Keep the same gate as §5: combined static thrust should clear **≥ ~4.0 kgf**
-  (1.5:1 at ~2.7 kg wet), preferably **≥ ~4.5 kgf** acceptance (§9).
-- Expect **higher hover throttle** and **softer punch** than the locked
-  **4S ~880–920 KV** path — **980 KV on 3S sits on the low-voltage / low-punch
-  side** for snappy climbs, but can still suit a **slow, precise spot-spray
-  loiter** if the stand clears margin.
+| Pack | V (nominal) | Max RPM (approx.) |
+|------|-------------|-------------------|
+| 3S | 11.1 | **980 × 11.1 ≈ 10,878 ≈ 10,900 RPM** |
+| 4S | 14.8 | **980 × 14.8 ≈ 14,500 RPM** |
+| **6S** | **22.2** | **980 × 22.2 ≈ 21,756 ≈ 21,800 RPM** |
+| 8S | 29.6 | ~29,000 — **do not run** |
 
-**AUW side-effect:** a 3S 5000–6000 mAh pack is often **~150–250 g lighter**
-than a similar 4S pack, which slightly helps the ~2.7 kg wet target — still
-does not replace a stand test.
+Full-charge voltages are higher (e.g. 6S ≈ 25.2 V → ~**24,700 RPM** unloaded).
+These are **unloaded ceilings**, not prop-loaded RPM.
 
-**Suitability verdict:** **Conditionally suitable** for this F450 touch-up
-sprayer on 8×3 — good fit for a **gentle loiter / spot-spray** profile and a
-**simple 3S** power system; **not** the punchier default versus 4S 880–920 KV.
-**Fly only after** water-ballast hover and a recorded thrust-stand pass.
+#### Thrust margin at ~2.7 kg wet AUW (planning — stand still mandatory)
+
+Same clearance gates as §5: want **≥ 1.5:1** → **≥ ~4.0 kgf** total static;
+acceptance **≥ ~4.5 kgf** (§9). Per-motor kgf at “50% stick” is **not**
+derivable from KV alone — do not invent a number.
+
+| Pack | Relative electrical headroom vs 3S | Expected hover / margin at ~2.7 kg | Notes |
+|------|--------------------------------------|--------------------------------------|-------|
+| **3S** | 1× (baseline) | **Marginal** — high hover %, soft climb; may fail 1.5:1 on 8×3 | Light pack helps AUW a little; not enough if stand is short |
+| **4S** | ~1.3× voltage | Better than 3S; still verify on stand | Uses packs already owned without series |
+| **6S** | **2×** voltage vs 3S | **Much more headroom** — hover % should drop; 1.5:1–2:1 class becomes realistic *if* props/ESCs survive the current | **Recommended primary for flight testing** |
+| **8S** | — | — | **Unsafe for this ESC/motor rating** |
+
+**6S caution:** ~**21,800 RPM** class on **8-inch 3-blade** props means high tip
+speed and high current — start stand tests at **low throttle**, watch ESC/motor
+temperature, and abort if props flex or amps spike. More voltage headroom is
+not a free pass to full stick on first spin.
+
+**AUW:** a 6S (or series) pack is **heavier** than a lone 3S — weigh the harness;
+re-check wet AUW before claiming the 2.7 kg mid-point.
+
+**Recommendation:** use **6S as the primary pack for flight testing** of the
+980 KV set. Keep **3S** only as a light bench/baseline. **Do not go to 8S.**
+Confirm every ESC is **rated to 6S** before series wiring.
 
 **8-inch on F450 with sprayer payload:** **more viable at ~2.7 kg wet** than at
 the former ~3 kg / 1 L plan; still a **nimble touch-up** ship, not a heavy
@@ -315,7 +330,8 @@ Ethernet like RTCM and MAVLink.
 | Load | Voltage | Current / power (order of magnitude) |
 |------|---------|--------------------------------------|
 | Hover (~2.7 kg, efficient 8×3) | 4S pack (880–920 KV path) | **~22–35 A** pack draw (tune after hover tests) |
-| Hover (~2.7 kg, 8×3) | **3S pack (980 KV path)** | Expect **higher % throttle** for same AUW; measure pack amps on hover — do not copy 4S numbers |
+| Hover (~2.7 kg, 8×3) | **3S pack (980 KV)** | **Marginal** — high % throttle; measure amps |
+| Hover (~2.7 kg, 8×3) | **6S pack (980 KV, flight-test primary)** | Expect **lower % throttle** than 3S; measure amps/temps on stand before hover |
 | Cruise / climb | 4S | **40–70 A** peaks — size ESC/batt for bursts |
 | Cruise / climb | **3S** | Softer voltage headroom — climbs will be **less snappy**; size ESC/batt after stand + hover |
 | Pixhawk + peripherals | 5 V BEC | **~0.3–0.6 A** |
@@ -363,7 +379,7 @@ OpenRTLS (optional): 4× DWM1000 anchors ──Ethernet/USB──► GS solver
 ## 9. Acceptance checks before spray
 
 1. Scales: dry and wet AUW recorded.  
-2. Thrust stand: 4 motors ≥ **4.5 kgf** combined at usable temperature (same gate for **4S 880–920 KV** or **3S 980 KV** paths).  
+2. Thrust stand: 4 motors ≥ **4.5 kgf** combined at usable temperature (same gate for **4S 880–920 KV** or **980 KV on 6S/3S** paths; prefer **6S** when testing 980 KV).  
 3. Hover water-only at **0.5 L** (ops fill), props clear of boom.  
 4. `DO_SPRAYER` / aux 15 from GS hub with Pi bridging telem (pump on bench).  
 5. Confirm Pi CPU stays cool in bridge-only mode; **no** live-spray ONNX on Pi.  
@@ -379,10 +395,7 @@ OpenRTLS (optional): 4× DWM1000 anchors ──Ethernet/USB──► GS solver
 
 v1 airframe is a **nimble F450 / Flamewheel 450** on **8-inch 3-blade** props
 with **2216-class ~880–920 KV on 4S** as the primary power lock, or the
-**on-hand unused 980 KV motors on a single 3S pack** as a simpler/lighter
-alternate (theoretical max ~**10,900 RPM** at 11.1 V; stand-test before
-chemical — fine for slow spot-spray loiter if thrust margin clears, softer
-than 4S for punchy climbs), a **Pixhawk 4 or Cube Orange** FC (not original Pixhawk1) running
+**on-hand unused 980 KV motors** as an alternate power path (**6S primary for flight testing**, ~**21,800 RPM** theoretical max at 22.2 V; 3S is light but marginal; **never 8S**; ESC must be 6S-rated; stand-test before chemical), a **Pixhawk 4 or Cube Orange** FC (not original Pixhawk1) running
 ArduCopter **`AC_Sprayer`** (`DO_SPRAYER` / aux **15**) and **ELRS** RC, plus a
 single **Pi 3B+** for MAVLink/logging only — **not** for live YOLOv8n-seg (CPU
 /~1 GB RAM cannot meet the GS live-ID FPS/latency budget) — at roughly
