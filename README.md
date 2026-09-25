@@ -15,6 +15,7 @@ Local research notes and starter configs for building a **precision agricultural
 | [docs/SETUP-NOTES.md](docs/SETUP-NOTES.md) | Practical setup checklist and ordering of work |
 | [docs/SIMULATION.md](docs/SIMULATION.md) | SITL / HIL / virtual sprayer test sequence |
 | [docs/GAPS.md](docs/GAPS.md) | End-to-end gap analysis (specified vs missing) |
+| [docs/PRESENTATION.md](docs/PRESENTATION.md) | Stakeholder-facing project overview |
 | [docs/WEED-ID.md](docs/WEED-ID.md) | Weed ID from ODM orthomosaics (models, datasets, K80/CPU inference) |
 | [docs/LIVE-PIPELINE.md](docs/LIVE-PIPELINE.md) | Live GS camera→ROI→ONNX→georeg→MAVLink spray pipeline |
 | [docs/WAYPOINT-OPT.md](docs/WAYPOINT-OPT.md) | Economic spot-spray waypoint optimisation (TSP/ATSP, wind, terrain, 45° spray) |
