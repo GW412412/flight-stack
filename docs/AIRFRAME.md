@@ -27,7 +27,7 @@ verify on a thrust stand and scales before chemical flight.
 | RC | **ELRS 2.4 GHz** RX → FC `RCIN` / CRSF (or SBUS via ELRS PWM/CRSF bridge) |
 | Companion | **Raspberry Pi 3B+** only (spare on hand) — serial/USB MAVLink to FC |
 | Video | Thinker + IMX335 + RTL8812AU WFB-NG ([SYSTEM-SPEC.md](SYSTEM-SPEC.md)) — **not** through the Pi |
-| Tank | **1 L** soft/rigid spray tank, CG on centreline |
+| Tank | **0.5 L** soft/rigid spray tank, CG on centreline (concentrate mix; see LIVE-PIPELINE dose) |
 | Pump | Small **PWM** diaphragm / brushless pump on `SERVOn_FUNCTION = 22` |
 | Boom | Light 3-section boom or single nozzle under CG ([LIVE-PIPELINE.md](LIVE-PIPELINE.md) §4.3) |
 
@@ -121,38 +121,39 @@ conf 0.50 spray gate onto the Pi. Shadow ONNX on the Pi is optional R&D only.
 | ELRS RX + antenna | 5–15 g |
 | Pi 3B+ + case + serial hat + SD | 70–100 g |
 | Thinker + IMX335 + 8812AU + antennas | 40–80 g |
-| 1 L tank empty + mounts | 120–200 g |
+| 0.5 L tank empty + mounts | 80–150 g |
 | Pump + hose + 3-section boom / nozzles | 200–350 g |
 | Misc (pads, ties, OA lidars light kit) | 100–180 g |
-| **Dry subtotal (no batt, no liquid)** | **~1.2–1.8 kg** |
+| **Dry subtotal (no batt, no liquid)** | **~1.2–1.7 kg** |
 | 4S 5000–6000 mAh pack | 500–650 g |
-| **1 L water / mix** | **~1000 g** |
-| **Estimated wet AUW** | **~2.7–3.4 kg** (planning mid **~3.0 kg**) |
+| **0.5 L mix** (concentrate) | **~500 g** |
+| **Estimated wet AUW** | **~2.4–3.0 kg** (planning mid **~2.7 kg**) |
 
-Touch-up with a **partial fill** (e.g. 0.3–0.5 L) is recommended for first
-flight tests.
+**Mix caveat:** concentrate must match **label rates**; mix **fresh per flight**
+(many herbicides store poorly once diluted). First hover tests may still use
+water only at 0.5 L to prove thrust before chemical.
 
 ---
 
 ## 5. Thrust margin — 8-inch 3-blade on F450
 
-**Target:** wet AUW ≈ **3.0 kg** → want **≥ 1.5:1** static thrust (≥ **4.5 kgf**
-total) for controllable spray; **2:1** (6 kgf) is healthier with liquid slosh.
+**Target:** wet AUW ≈ **2.7 kg** (0.5 L concentrate) → want **≥ 1.5:1** static
+thrust (≥ **~4.0 kgf** total); **2:1** (~5.4 kgf) is healthier with slosh.
 
 | Setup | Ballpark | Verdict |
 |-------|----------|---------|
-| Stock “toy” 2212 920 KV + light 8×4.5 two-blade | Often ~2.5–3.5 kgf total on 4S | **Insufficient** for 3 kg wet |
-| **Locked: 2216 ~880–920 KV + 8×3 three-blade on 4S** | Aim **≥ 1.1–1.3 kgf per motor** on stand → **~4.5–5.2 kgf** quad | **Marginal but workable** if stand-tested; hover ~50–65% |
-| Oversized 3508-class on F450 | High thrust | Often **mechanically awkward** (mounts, arms, CG) — not default |
+| Stock “toy” 2212 920 KV + light 8×4.5 two-blade | Often ~2.5–3.5 kgf total on 4S | Still **risky** at 2.7 kg wet |
+| **Locked: 2216 ~880–920 KV + 8×3 three-blade on 4S** | Aim **≥ 1.1–1.3 kgf per motor** → **~4.5–5.2 kgf** quad | **Improved vs 1 L / ~3 kg** — about **1.7–1.9:1** at 2.7 kg if stand hits ~5 kgf; hover often **~45–55%** |
+| Oversized 3508-class on F450 | High thrust | Still awkward on F450 mounts — not default |
 
-**Decision:** keep **8×3** as requested; **mandate a thrust-stand check** before
-any full 1 L flight. If total static thrust **&lt; 4.5 kgf**, either (a) fly
-**≤ 0.5 L**, (b) step to a higher-thrust 2216/2306 bin on 4S, or (c) accept a
-larger frame later — do **not** paper over a short thrust margin.
+**Decision:** keep **8×3**; **mandate a thrust-stand check** before chemical
+flight. The **0.5 L** load is the planned wet mass — do not “top off to 1 L”
+without re-checking margin. If total static thrust **&lt; 4.0 kgf**, step up
+motor thrust bin or reduce other AUW — do **not** paper over a short margin.
 
-**8-inch on F450 with sprayer payload:** **viable only with adequate 2216-class
-thrust and careful AUW** (partial tank, light boom). It is **not** a comfortable
-ag-hex margin; treat as a **nimble touch-up** ship, not a heavy spray mule.
+**8-inch on F450 with sprayer payload:** **more viable at ~2.7 kg wet** than at
+the former ~3 kg / 1 L plan; still a **nimble touch-up** ship, not a heavy
+ag mule. Extra ~300–500 g off the liquid is meaningful thrust margin on 8×3.
 
 ---
 
@@ -160,7 +161,7 @@ ag-hex margin; treat as a **nimble touch-up** ship, not a heavy spray mule.
 
 | Load | Voltage | Current / power (order of magnitude) |
 |------|---------|--------------------------------------|
-| Hover (3 kg, efficient 8×3) | 4S pack | **~25–40 A** pack draw (tune after hover tests) |
+| Hover (~2.7 kg, efficient 8×3) | 4S pack | **~22–35 A** pack draw (tune after hover tests) |
 | Cruise / climb | 4S | **40–70 A** peaks — size ESC/batt for bursts |
 | Pixhawk + peripherals | 5 V BEC | **~0.3–0.6 A** |
 | Pi 3B+ (idle bridge) | 5 V (≥2.5 A supply) | **~0.4–0.7 A**; **1–1.5 A** if thrashing ONNX |
@@ -198,7 +199,7 @@ Thinker video ──WFB-NG 5 GHz──► GS decode  ← NOT via Pi
 
 1. Scales: dry and wet AUW recorded.  
 2. Thrust stand: 4 motors ≥ **4.5 kgf** combined at usable temperature.  
-3. Hover water-only at **0.5 L**, then **1 L**, props clear of boom.  
+3. Hover water-only at **0.5 L** (ops fill), props clear of boom.  
 4. `DO_SPRAYER` / aux 15 from GS hub with Pi bridging telem (pump on bench).  
 5. Confirm Pi CPU stays cool in bridge-only mode; **no** live-spray ONNX on Pi.  
 6. ELRS failsafe → pump off (Lua / params per SETUP-NOTES).
@@ -212,8 +213,9 @@ with **2216-class 4S** power, a **Pixhawk 4 or Cube Orange** FC (not original Pi
 ArduCopter **`AC_Sprayer`** (`DO_SPRAYER` / aux **15**) and **ELRS** RC, plus a
 single **Pi 3B+** for MAVLink/logging only — **not** for live YOLOv8n-seg (CPU
 /~1 GB RAM cannot meet the GS live-ID FPS/latency budget) — at roughly
-**~3 kg wet AUW** with a **1 L** tank, where 8×3 thrust is **marginal and
-stand-test mandatory**, keeping the stack to one FC and one companion.
+**~2.7 kg wet AUW** with a **0.5 L** concentrate tank (improved 8×3 thrust
+margin vs the old 1 L / ~3 kg plan; stand-test still mandatory), keeping the
+stack to one FC and one companion.
 
 ---
 

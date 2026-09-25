@@ -23,7 +23,7 @@ blanket or dense-infestation work.
 |------|--------------------|
 | Typical load | **~25 weeds** scattered across a **~5-acre (~2 ha)** paddock |
 | Pattern | Peppered **localised patches**, long stretches of clean pasture between |
-| Chemical | A **1 L tank is effectively unlimited** at this density (~25 × ≤5 mL ≪ 1 L); dose conservatism is **stewardship** (less drift, less scorched grass), not endurance |
+| Chemical | **0.5 L tank** with **higher-concentration** mix (active ingredient per weed ≈ former 1 L standard-strength plan; carrier volume halved); dose conservatism is still **stewardship** |
 | Detection priority | **High precision over high recall** — a false positive wastes chemical and pilot time on a clean paddock |
 | Offline review | Any **missed weed** on a clean-paddock spot-check is a **failed pass** (goal is **zero escapes**) |
 | Routing | Waypoint optimiser must **cluster** nearby targets into short efficient passes, not long zig-zag traverses across empty ground ([WAYPOINT-OPT.md](WAYPOINT-OPT.md)) |
@@ -175,9 +175,11 @@ outside the boom envelope (detection not under sprayable path).
 
 ### 4.2 Dose from canopy area
 
-Mask area in ROI pixels → ground area using GSD at AGL. Work in **cm²** for
-the dose law. At ~25 weeds / 5 acres a 1 L tank is not the constraint — small
-pulses are for **chemical stewardship** (less waste and pasture burn):
+**Tank:** **0.5 L** (half-litre) with a **higher-concentration** mix so that
+**active ingredient per weed stays equivalent** to the former 1 L
+standard-strength plan while **carrier volume per pulse is halved**.
+
+Mask area in ROI pixels → ground area using GSD at AGL. Work in **cm²**:
 
 \[
 A_{\mathrm{cm}^2} = 10^{4}\, N_{\mathrm{px}} \cdot \left(\frac{h \cdot s_{\mathrm{px}}}{f}\right)^2
@@ -188,7 +190,7 @@ scale, \(f\) focal length (m), \(h\) AGL (m). Equivalently: store
 `meters_per_pixel_at_1m` in intrinsics YAML, compute \(A_{\mathrm{m}^2}\), then
 \(A_{\mathrm{cm}^2} = A_{\mathrm{m}^2} \times 10^{4}\).
 
-**Locked dose function (v1, conservative spot spray):**
+**Locked dose function (v1.1, half volume / concentrate mix):**
 
 \[
 V_{\mathrm{mL}} = \mathrm{clamp}\bigl(V_0 + k \cdot A_{\mathrm{cm}^2},\; V_{\min},\; V_{\max}\bigr)
@@ -196,22 +198,29 @@ V_{\mathrm{mL}} = \mathrm{clamp}\bigl(V_0 + k \cdot A_{\mathrm{cm}^2},\; V_{\min
 
 | Symbol | Value | Meaning |
 |--------|-------|---------|
-| \(V_0\) | **0.5 mL** | Base offset per accepted weed |
-| \(k\) | **2.5 mL / cm²** | Linear canopy term (mid of 2–3 mL/cm²) |
-| \(V_{\min}\) | **0.2 mL** | Hard floor for any fired pulse |
-| \(V_{\max}\) | **5 mL** | Hard cap per detection |
+| \(V_0\) | **0.25 mL** | Base offset per accepted weed (was 0.5) |
+| \(k\) | **1.25 mL / cm²** | Linear canopy term (was 2.5) |
+| \(V_{\min}\) | **0.1 mL** | Hard floor for any fired pulse (was 0.2) |
+| \(V_{\max}\) | **2.5 mL** | Hard cap per detection (was 5) |
 | \(A_{\min}\) | **0.5 cm²** | Below → skip (too small / noise) |
 
 If \(A_{\mathrm{cm}^2} < A_{\min}\), **skip** (no command). Otherwise apply the
-clamp above. Example: a **2 cm²** rosette → \(0.5 + 2.5\times 2 = 5.0\) mL
-(hits cap); a **0.2 cm²** speck is skipped. At ~25 weeds even full 5 mL pulses
-use only ~125 mL — tank endurance is not the reason for the cap.
+clamp above. Example: a **2 cm²** rosette → \(0.25 + 1.25\times 2 = 2.5\) mL
+(hits cap); a **0.2 cm²** speck is skipped. At ~25 weeds, full 2.5 mL pulses
+use only ~62 mL of the **0.5 L** tank — endurance is still not the driver;
+smaller pulses cut drift and pasture burn with concentrate mix.
+
+**Concentrate caveat:** mix to **label rates** for the product in use (do not
+guess “2× strength”). Many herbicides **do not store well pre-mixed** — mix
+**fresh for each flight**, discard leftover mix per label, and never leave
+concentrate solution sitting in the tank or lines between days.
 
 **Pump on-time** from calibrated flow \(Q\) (mL/s) at current `SPRAY_PUMP_*`
-operating point (bench-measure once):
+operating point (re-bench after switching to concentrate — flow vs PWM may
+differ with viscosity):
 
 \[
-t_{\mathrm{on}} = \mathrm{clamp}\left(\frac{V}{Q},\; 0.05\,\mathrm{s},\; 0.60\,\mathrm{s}\right)
+t_{\mathrm{on}} = \mathrm{clamp}\left(\frac{V}{Q},\; 0.04\,\mathrm{s},\; 0.40\,\mathrm{s}\right)
 \]
 
 ### 4.3 Boom section / nozzle mapping
@@ -352,8 +361,8 @@ Live weed spray for this project is **touch-up on clean paddocks** (~**25 weeds
 decodes the Thinker/IMX335 WFB-NG stream, crops a boom ROI, letterboxes to
 **640**, runs **YOLOv8n-seg ONNX** at **conf 0.50 / iou 0.5** (precision over
 recall), projects each mask to WGS84 with GPS/attitude/intrinsics/AGL (georeg
-≥ 0.70), doses \(V = \mathrm{clamp}(0.5 + 2.5\,A_{\mathrm{cm}^2},\, 0.2,\, 5)\) mL for
-**stewardship** (1 L is unlimited at this density), pulses the nearest of
+≥ 0.70), doses \(V = \mathrm{clamp}(0.25 + 1.25\,A_{\mathrm{cm}^2},\, 0.1,\, 2.5)\) mL from a
+**0.5 L** concentrate tank (AI-equivalent, half carrier), pulses the nearest of
 **3 boom sections** via **`MAV_CMD_DO_SPRAYER` on telemetry** inside **≤ 150 ms**,
 clusters sparse waypoint revisits, fails closed on bad georeg or link loss, and
 authorises live ops only after offline **mAP50 ≥ 0.80**, **recall ≥ 0.85** at
