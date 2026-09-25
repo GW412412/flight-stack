@@ -1,0 +1,14 @@
+{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "properties": {"species": "lantana", "confidence": 0.91},
+   "geometry": {"type": "Point", "coordinates": [147.1240, -35.1234]}},
+  {"type": "Feature", "properties": {"species": "lantana", "confidence": 0.87},
+   "geometry": {"type": "Point", "coordinates": [147.1241, -35.1235]}},
+  {"type": "Feature", "properties": {"species": "parthenium", "confidence": 0.78},
+   "geometry": {"type": "Point", "coordinates": [147.1243, -35.1236]}},
+  {"type": "Feature", "properties": {"species": "lantana", "confidence": 0.83},
+   "geometry": {"type": "Point", "coordinates": [147.1239, -35.1237]}},
+  {"type": "Feature", "properties": {"species": "parthenium", "confidence": 0.95},
+   "geometry": {"type": "Polygon", "coordinates": [[[147.1245, -35.1238],
+     [147.1246, -35.1238], [147.1246, -35.1239], [147.1245, -35.1239],
+     [147.1245, -35.1238]]]}}
+]}

@@ -71,3 +71,7 @@ MIT for these research notes (see [LICENSE](LICENSE)). Upstream projects keep th
 - [Labeling workflow](docs/LABELING-WORKFLOW.md)
 
 - [Voice control](docs/VOICE-CONTROL.md)
+
+## Linux GS middleware (`drone_stack/`)
+
+SITL launchers, pymavlink recorder, deterministic safety gates, GeoJSON→QGC `.plan` planner, and optional Ollama agent. See [drone_stack/README.md](drone_stack/README.md). QGroundControl + MAVProxy only (no Mission Planner/Wine).
