@@ -33,22 +33,24 @@ import job).
 Use **DeepWeeds species names** plus an explicit negative / background class.
 DeepWeeds: 8 weed species + negatives (paper/repo in [WEED-ID.md](WEED-ID.md)).
 
-| ID | Class name | Notes |
-|----|------------|-------|
-| 0 | `chineeapple` | DeepWeeds |
-| 1 | `lantana` | DeepWeeds |
-| 2 | `snakeweed` | DeepWeeds |
-| 3 | `parthenium` | DeepWeeds |
-| 4 | `pricklyacacia` | DeepWeeds |
-| 5 | `siamweed` | DeepWeeds |
-| 6 | `snakeweed` → keep DeepWeeds spelling from dataset labels when exporting | Align export names 1:1 with DeepWeeds label files |
-| 7 | `rubbervine` | DeepWeeds (confirm exact string from DeepWeeds label map) |
-| 8 | `negative` | Bare pasture / no weed (optional image-level or empty tile; do **not** draw fake polygons for empty tiles — leave tile with zero shapes and tag `negative` if using image tags) |
+| ID | Class name (CVAT / YOLO) | DeepWeeds species string |
+|----|--------------------------|---------------------------|
+| 0 | `chinee_apple` | Chinee apple |
+| 1 | `lantana` | Lantana |
+| 2 | `snake_weed` | Snake weed |
+| 3 | `prickly_acacia` | Prickly acacia |
+| 4 | `siam_weed` | Siam weed |
+| 5 | `parthenium` | Parthenium |
+| 6 | `rubber_vine` | Rubber vine |
+| 7 | `parkinsonia` | Parkinsonia |
+| 8 | `negative` | Negative — use for **empty tiles only** (no polygons); do not paint fake shapes on bare pasture |
 
-**Practical rule for paddock orthos:** if a rosette species is unknown, label as
-the closest DeepWeeds species **or** add one project class `rosette_unknown`
-(id 9) only after the first DeepWeeds-pretrained run — default is **stick to
-DeepWeeds 0–7 + empty tiles as negatives** so pretrain heads transfer cleanly.
+Label IDs **0–7** match DeepWeeds weed species; **8** is DeepWeeds Negative.
+Keep export order identical to this table so heads transfer cleanly.
+
+**Practical rule for paddock orthos:** if a rosette species cannot be told apart at
+ortho GSD, still pick the closest DeepWeeds class for v1; collapse to a single
+`rosette` class only after a review cycle if confusion stays high.
 
 Instance labels: draw a **polygon (or brush mask)** around each rosette canopy.
 One instance = one plant/clump. Do not merge separate plants into one shape.
