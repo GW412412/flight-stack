@@ -7,6 +7,12 @@ Entry format: **YYYY-MM-DD — Title** · Decision · Notes / follow-ups.
 
 ## Autonomy & Control
 
+**2026-10-23 — Mission shape**
+- A waypoint file covers the paddock's four corners, with the cameras looking along the fence line and inwards.
+- An optional crosshatch pattern covers areas that need investigating.
+- The survey runs in Auto mode, and the drone switches to Guided mode when a potential target is spotted.
+- Either G or the conversation model can take the sticks.
+
 **2026-10-23 — The model on the sticks**
 - For now, the model flying the drone is a local model, which keeps it focused on the task at hand.
 - Its value is how much raw data it can process and how quickly it can decide in the time available. We'll fine-tune that as we go.
@@ -51,7 +57,11 @@ Entry format: **YYYY-MM-DD — Title** · Decision · Notes / follow-ups.
 
 ## Hardware
 
-_No entries yet._
+**2026-10-23 — Two ground-station computers**
+- **GPU computer:** RTX 3060, with 24 GB of VRAM in total once a second 3060 is added. It runs vision and the watchers.
+- **CPU-only computer:** failover and hot spare.
+- mavlink-router uses almost no resources and can run on either.
+- Note: two 12 GB cards are two separate pools of memory, not one 24 GB pool. Each model has to fit on one card unless it's split across both.
 
 ## Software Stack
 
@@ -106,9 +116,33 @@ G's radio (failsafe, highest priority)
 
 _Draft. Review it alongside the failsafe-trigger question and the full safety review._
 
+## Monitoring & Communication Layer
+
+How G, the conversation model (Spray drone) and the decision models talk to each other.
+
+**2026-10-23 — Decision models are assist-only**
+- Decision models help the conversation model make more thorough decisions. They never command the drone.
+- Each one gives a definite yes/no with a confidence value.
+- The conversation model acts on high-confidence answers and flags low-confidence ones to G.
+
+**2026-10-23 — Watcher agents**
+- Watchers are small, non-conversational decision models. Each has its own ID and is given its own max/min parameters.
+- They watch telemetry through mavlink-router and sing out when a threshold is crossed.
+- mavlink-router logs everything in full, including which watcher or model said what.
+- Cross-reference rules between watchers (for example, watcher A plus watcher B means flag it) can be added on the fly.
+
+**2026-10-23 — Bench-test shortlist**
+- [d1-omni](https://ollama.com/library/d1-omni): Liquid AI, 600M, takes text, images or a short voice clip.
+- [laya](https://ollama.com/library/laya): Convai Innovations, about 400M, text only. Its page says under 10 ms per question.
+- [d3](https://ollama.com/library/d3) at 2B: vLLM Semantic Router, takes text and images.
+- Caveats:
+  - Confidence isn't accuracy, so thresholds have to be calibrated against our own data.
+  - Decision models are for go/no-go calls, not maths. Battery and height thresholds stay in plain code. Decision models make the higher-level calls on summaries of the drone's state or on camera frames.
+
 ## Open Questions
 
 **2026-10-23 — How do we get a height-capped no-fly box?**
+- **Owner (23 Oct 2026):** this belongs to the flight controller side, not this project. It's kept here for reference only.
 - Standard ArduPilot exclusion zones are horizontal-only (they block the whole column), and the altitude fence applies to the whole flight.
 - Options to assess: route around exclusion zones, plan mission altitudes over tall objects, or use a custom check (for example a Lua script) that combines a zone with a floor height.
 
