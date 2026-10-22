@@ -28,6 +28,19 @@ Entry format: **YYYY-MM-DD — Title** · Decision · Notes / follow-ups.
 
 ## Safety & Failsafe
 
+**2026-10-23 — Geofences are part of pre-planning**
+- Geofences are entered at planning time, never added on the fly, because they're the thing most likely to be forgotten.
+- Planning workflow:
+  1. Identify the tallest object above the surface model, whether or not it's mapped.
+  2. Draw a box or circle around it with a height cap.
+- The intent of the height cap is that the drone can fly over the top of the object but can't fly into its volume.
+- **Doc check (23 Oct 2026):** ArduPilot's [Fences page](https://ardupilot.org/copter/docs/common-geofencing-landing-page.html) says inclusion/exclusion zones (polygon or circle) have "no height/altitude restriction". It also says the altitude fences (`FENCE_ALT_MAX`, `FENCE_ALT_MIN`) are "global limits, independent of any Inclusion/Exclusion fence boundaries, which are horizontal-only". A standard exclusion zone therefore blocks the whole column above the object, so the drone has to go around it, not over it. Getting the fly-over-but-not-into behaviour needs another method (see Open Questions).
+
+**2026-10-23 — GPS failsafe set to Land**
+- If the GPS fails mid-flight, the failsafe action is Land.
+- Reason: a faulty GPS mid-flight causes the "toilet bowl" effect (the drone circles in a growing spiral). G has seen this firsthand.
+- ArduPilot note: Copter handles GPS loss through the EKF failsafe, `FS_EKF_ACTION`. The [parameter list](https://ardupilot.org/copter/docs/parameters.html) gives the values 0 Report only, 1 Land if the current mode needs position, 2 AltHold if the current mode needs position, and 3 Land from all modes. Choose 1 or 3 to match this decision.
+
 **2026-10-23 — Rely on ArduPilot's built-in failsafes, and G's action is Position Hold**
 - Link loss, low battery and similar triggers use the failsafes already built into the flight controller, set the way ArduPilot documents them. We aren't writing new rules.
 - G watches the drone's orientation. If it starts tilting, running off, or heading where it shouldn't, G switches to position hold and then decides what happens next (land or something else).
@@ -94,6 +107,10 @@ G's radio (failsafe, highest priority)
 _Draft. Review it alongside the failsafe-trigger question and the full safety review._
 
 ## Open Questions
+
+**2026-10-23 — How do we get a height-capped no-fly box?**
+- Standard ArduPilot exclusion zones are horizontal-only (they block the whole column), and the altitude fence applies to the whole flight.
+- Options to assess: route around exclusion zones, plan mission altitudes over tall objects, or use a custom check (for example a Lua script) that combines a zone with a floor height.
 
 **2026-10-23 — What triggers the failsafe ladder? (mostly answered 23 Oct)**
 - Answer: the flight controller's built-in failsafes handle the automatic triggers, and G switches to position hold by watching orientation (see Safety & Failsafe).
