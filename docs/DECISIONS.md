@@ -3,6 +3,8 @@
 Running record of project decisions. Add new entries at the top of the relevant section.
 Entry format: **YYYY-MM-DD — Title** · Decision · Notes / follow-ups.
 
+**Changing a decision:** don't rewrite the old entry. Tag it **Superseded by [YYYY-MM-DD — Title]**, and give the new entry its own date.
+
 ---
 
 ## Autonomy & Control
