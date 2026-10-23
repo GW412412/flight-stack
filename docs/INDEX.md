@@ -2,7 +2,7 @@
 
 Map of the project. [DECISIONS.md](DECISIONS.md) is the master document: where anything else disagrees with it, DECISIONS.md wins.
 
-Everyone's ideas are welcome. Contributions are highly valued, and we'd love you to contribute to the project.
+Everyone's ideas are welcome. We value your expert knowledge and your contributions, and your thought alone is the only contribution required.
 
 ## Changelog
 
