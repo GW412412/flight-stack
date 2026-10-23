@@ -4,7 +4,7 @@ What to install, in what order, and what must be true before telemetry flows. Ro
 
 ## Required before any telemetry flows
 
-1. The Cube is powered and connected by USB, and shows up as a serial device (`/dev/ttyACM0`, or a stable path under `/dev/serial/by-id/`).
+1. The Pixhawk 1 is powered and connected by USB, and shows up as a serial device (`/dev/ttyACM0`, or a stable path under `/dev/serial/by-id/`).
 2. Your user is in the `dialout` group, and ModemManager is masked so it doesn't grab the port: `sudo systemctl mask --now ModemManager.service`. Log out and in again after the group change.
 3. ArduPilot is sending streams on the USB port. The heartbeat is always sent, but the rest only flows for streams enabled by the `SR0_*` parameters or requested by a connected client. Set the `SR0_*` rates so the watchers get data even with no ground station attached.
 4. `/var/log/mavlink-router` exists and is writable by the user running the router.
@@ -50,6 +50,6 @@ What to install, in what order, and what must be true before telemetry flows. Ro
 
 ## Known gaps
 
-- `config/mavlink-router.conf` has not been run against a real router or Cube yet.
+- `config/mavlink-router.conf` has not been run against a real router or Pixhawk 1 yet.
 - Mission Planner and mavproxy also send heartbeats that keep the GCS failsafe timer alive. Only QGC's is blocked in the config. Which client supplies the failsafe heartbeat is not decided.
 - Blocking QGC's heartbeat at the router is untested.

@@ -5,7 +5,7 @@ One-glance view of the stack. Source of truth: [DECISIONS.md](DECISIONS.md). Upd
 ```mermaid
 flowchart LR
   G["G's radio<br/>override / failsafe (highest priority)"] -->|RC| FC
-  FC["Flight controller (Cube, ArduPilot)<br/>telemetry source · master authority until overridden"]
+  FC["Flight controller (Pixhawk 1, ArduPilot)<br/>telemetry source · master authority until overridden"]
   CAM[Camera] -->|video| VID
 
   subgraph CPU["CPU-only computer"]

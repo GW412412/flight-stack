@@ -14,7 +14,7 @@
 
 ## 1. The short version
 
-- Milestone 1 (the flight controller talking to a local AI) can be built from existing parts. The chain is: Cube on USB, then MAVLink Router, then QGroundControl plus mavlink-mcp, then ollmcp, then a local Ollama model.
+- Milestone 1 (the flight controller talking to a local AI) can be built from existing parts. The chain is: Pixhawk 1 on USB, then MAVLink Router, then QGroundControl plus mavlink-mcp, then ollmcp, then a local Ollama model.
 - Nobody has published this exact chain working on real hardware. The first job is to prove it on the bench with props off.
 - The language model only makes coarse decisions. Fine positioning runs in our own target servo code. Only a deterministic Lua spray gate on the Cube can switch the pump.
 - There are no confirmed hard blockers. Two open questions could change the design: whether the drone can hold a steady 50 cm over real grass, and whether weed detection is reliable enough in real light.
@@ -28,7 +28,7 @@
 |---|---|---|---|
 | Ubuntu Linux | Host OS | 24.04 or 26.04 LTS preferred | 22.04 needs QGC v5.0.x or a manual build |
 | QGroundControl | Human ground station for setup, parameters, map and calibration | v5.1.5 AppImage (1 Oct 2026) | Runs natively. Install `libfuse2 libxcb-xinerama0 libxkbcommon-x11-0 libxcb-cursor0`, add your user to `dialout`, and run `sudo systemctl mask --now ModemManager.service` |
-| MAVLink Router | Shares the Cube's single port between programs, with per-endpoint message filtering | `mavlink-routerd` | Preferred over MAVProxy. MAVProxy with two `--out udp:` endpoints is the alternative |
+| MAVLink Router | Shares the Pixhawk 1's single port between programs, with per-endpoint message filtering | `mavlink-routerd` | Preferred over MAVProxy. MAVProxy with two `--out udp:` endpoints is the alternative |
 | MAVProxy | Optional router and command-line ground station | — | Its chat module relies on OpenAI's Assistants API, which has been shut down, so treat it as reference code only |
 
 ### 2.2 AI chain
@@ -39,7 +39,7 @@
 | ollmcp | MCP client for Ollama that runs mavlink-mcp over stdio | v0.35.1 (30 Sep 2026) | Keep human-in-the-loop approval on. Test the camera with `--camera file:<image>` |
 | Ollama model | Local model with tool calling | `qwen3:8b` (5.2 GB), or `qwen3-vl:8b` (6.1 GB) / `gemma4:12b` (7.7–8.0 GB) for vision | Sizes are downloads only. On 40 CPU threads it runs slowly until the RTX 3060 arrives, and the speed hasn't been measured |
 
-### 2.3 Flight controller (Cube)
+### 2.3 Flight controller (Pixhawk 1)
 
 | Component | Role | Notes |
 |---|---|---|
@@ -72,7 +72,7 @@ Whether mavlink-mcp can read OpenIPC's H.265 stream (over `rtsp://` or `udp://` 
 ## 3. Milestone 1 chain (props off, ESCs unpowered)
 
 ```
-Cube (USB /dev/ttyACM0, 57600)
+Pixhawk 1 (USB /dev/ttyACM0, 57600)
   │  mavlink-routerd -e 127.0.0.1:14550 -e 127.0.0.1:14560 /dev/ttyACM0:57600
   ├─→ UDP 14550 → QGroundControl
   └─→ UDP 14560 → mavlink-mcp → (stdio) → ollmcp → Ollama model
@@ -91,7 +91,7 @@ Cube (USB /dev/ttyACM0, 57600)
 - Backup fix: the AI watchdog.
 - Failsafe action: decide it deliberately in QGC. At a 50 cm spray height, consider `FS_GCS_ENABLE = 7` (Brake or Land) or `5` (Land) instead of RTL. Value 2 is no longer used.
 
-**Trap 2: failsafe writes persist.** mavlink-mcp writes `FS_GCS_*` to the Cube on connect, and the values stay after the session. Policy: a person sets the failsafe parameters in QGC from the project parameter file, and after every session you compare the Cube's parameters against that file.
+**Trap 2: failsafe writes persist.** mavlink-mcp writes `FS_GCS_*` to the Pixhawk 1 on connect, and the values stay after the session. Policy: a person sets the failsafe parameters in QGC from the project parameter file, and after every session you compare the Pixhawk 1's parameters against that file.
 
 **Trap 3: Simulation on Hardware fools the simulator check.** Any build with SIM_ENABLED sends SIMSTATE, so mavlink-mcp treats it as SITL and allows actuation. Motor outputs are blocked by default (`SIM_OH_MASK`), but keep the props off anyway.
 
@@ -105,7 +105,7 @@ Cube (USB /dev/ttyACM0, 57600)
 - Endpoints: `/dev/ttyACM0:57600` to `127.0.0.1:14550` (QGC) and `127.0.0.1:14560` (mavlink-mcp).
 - QGC endpoint: block outbound HEARTBEAT, then verify it in test 4.
 
-### 5.2 Cube parameters (set by a person in QGC)
+### 5.2 Pixhawk 1 parameters (set by a person in QGC)
 
 | Parameter | Intended value | Why |
 |---|---|---|
@@ -135,7 +135,7 @@ Cube (USB /dev/ttyACM0, 57600)
 ## 6. Milestone 1 bench tests
 
 1. **SITL only.** Ask the model to take off to 5 m, fly 10 m north and land. Pass when the QGC map matches the model's report.
-2. **Real Cube, read-only.** Ask for battery, GPS fix, mode, attitude and `RNGFND1_TYPE`. Pass when the answers match QGC and the attitude follows a hand tilt.
+2. **Real Pixhawk 1, read-only.** Ask for battery, GPS fix, mode, attitude and `RNGFND1_TYPE`. Pass when the answers match QGC and the attitude follows a hand tilt.
 3. **Mode changes, props off.** Add the actuation flags and record the parameters written on connect. Flipping the RC switch must stop the AI's commands.
 4. **Link loss.** Kill mavlink-mcp while in Guided, once with QGC closed and once with it open. Both runs must trigger the failsafe with the chosen action.
 5. **Optional: Simulation on Hardware** (Cube Orange only). Drive an LED or water bottle from the relay. Back up parameters first.
@@ -143,7 +143,7 @@ Cube (USB /dev/ttyACM0, 57600)
 ## 7. Test sequence after milestone 1
 
 1. Run the target servo and spray gate against SITL with a fake detector. Prove the cut-off on mode change, link loss and target loss.
-2. Bench test the real Cube with the relay driving an LED or water bottle. Check the logs and the cut-off.
+2. Bench test the real Pixhawk 1 with the relay driving an LED or water bottle. Check the logs and the cut-off.
 3. **Water on the bench:** measure shot volume, dribble and spray pattern at 50 cm. If it dribbles, fit a check valve or solenoid before any flying.
 4. **Hover at 50 cm with water and no AI**, using rangefinder height in the EKF. Log the rangefinder against the barometer. This is the 50 cm gate.
 5. Run the target servo over a coloured card with the model off. Measure the nozzle error.
@@ -154,7 +154,7 @@ Cube (USB /dev/ttyACM0, 57600)
 
 ## 8. Hardware notes (engineering judgement)
 
-- The pump has a pressure switch and no solenoid, so a Cube relay switches its power through a MOSFET. Fit a flyback diode. Line pressure can cause dribble after the pump stops (see test 3).
+- The pump has a pressure switch and no solenoid, so a Pixhawk 1 relay switches its power through a MOSFET. Fit a flyback diode. Line pressure can cause dribble after the pump stops (see test 3).
 - Choose the rangefinder for how it behaves over grass and in sunlight at 50 cm.
 - The Cube needs at least 2 MB of flash, and the Cube Orange is the only board with ready-built Simulation on Hardware firmware.
 
@@ -164,6 +164,6 @@ Cube (USB /dev/ttyACM0, 57600)
 
 **Confirmed 23 Oct 2026 against the ArduPilot Copter docs:** the `FS_GCS_ENABLE` and `FS_THR_ENABLE` values and the `FS_OPTIONS` bits.
 
-**Not verified:** OpenIPC video delay and MAVLink tunnelling, the exact Cube and Ubuntu versions you have, real model speed, the heartbeat filter fix, and anything on real hardware.
+**Not verified:** OpenIPC video delay and MAVLink tunnelling, the exact Pixhawk 1 and Ubuntu versions you have, real model speed, the heartbeat filter fix, and anything on real hardware.
 
 **Possible blockers:** the 50 cm hold (fallbacks are EKF rangefinder height, hovering higher with a longer jet, or a drop tube) and detection reliability (fallbacks are a measured colour baseline, then YOLO). Neither has to end the project.
