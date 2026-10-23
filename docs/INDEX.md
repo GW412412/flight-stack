@@ -2,6 +2,8 @@
 
 Map of the project. [DECISIONS.md](DECISIONS.md) is the master document: where anything else disagrees with it, DECISIONS.md wins.
 
+Everyone's ideas are welcome. Contributions are highly valued, and we'd love you to contribute to the project.
+
 ## Changelog
 
 - 2026-10-23: Created the decisions log, architecture diagram, telemetry bring-up doc, mavlink-router config and this index; corrected the stack report; added the supersede rule; README ground-station section updated; Kimi captures tracked.
