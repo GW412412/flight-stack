@@ -75,4 +75,14 @@ MIT for these research notes (see [LICENSE](LICENSE)). Upstream projects keep th
 
 ## Linux GS middleware (`drone_stack/`)
 
-SITL launchers, pymavlink recorder, deterministic safety gates, GeoJSON→QGC `.plan` planner, and optional Ollama agent. See [drone_stack/README.md](drone_stack/README.md). QGroundControl + MAVProxy only (no Mission Planner/Wine).
+SITL launchers, pymavlink recorder, deterministic safety gates, GeoJSON→QGC `.plan` planner, and optional Ollama agent. See [drone_stack/README.md](drone_stack/README.md).
+
+### Ground station tools (see [docs/DECISIONS.md](docs/DECISIONS.md))
+
+- **Mission Planner** runs in a virtual machine on the CPU-only computer, not under Wine, which is hit-and-miss with it. It's used for testing, tuning and as G's visual readout.
+- **QGroundControl** is also part of the stack, running natively on Linux.
+- **Command-line tools:**
+  - `mavproxy`: a bare-bones terminal console that shows configurable telemetry and can switch flight modes.
+  - `mavlink-router`: forwards telemetry to several consumers at once, including the Mission Planner VM, QGroundControl and the decision models, so they all see the same stream.
+  - Other command-line tools that can switch flight modes, for example pymavlink scripts such as `drone_stack/middleware/mav_node.py` and mavlink-mcp.
+- **Two computers:** the CPU-only computer runs the video pipeline (OpenCV plus YOLO) and the Mission Planner VM. The GPU computer runs the watchers and d1-omni. mavlink-router can run on either.
