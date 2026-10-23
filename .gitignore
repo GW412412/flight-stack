@@ -5,6 +5,3 @@ __pycache__/
 
 drone_stack/.venv/
 *.plan
-
-# Kimi chat captures (contain account chat IDs/names) - keep local only
-docs/kimi-share*
