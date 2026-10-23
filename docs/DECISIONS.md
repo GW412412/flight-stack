@@ -158,6 +158,11 @@ How G, the conversation model (Spray drone) and the decision models talk to each
 
 ## Open Questions
 
+**2026-10-23 — Can watchers trigger a failsafe if the conversation model is down?**
+- The question: should watchers be able to trigger a failsafe directly, bypassing the conversation model, when it can't be reached? Or is the flight controller's own failsafe ladder enough backup?
+- Context: the conversation model is currently the only place where advice turns into action. If it's down, the watchers still sing out but nobody is listening.
+- G's stance: if it happens, it happens, and it's not the end of the world. The flight controller's built-in failsafes are still the floor.
+
 **2026-10-23 — How do we get a height-capped no-fly box?**
 - **Owner (23 Oct 2026):** this belongs to the flight controller side, not this project. It's kept here for reference only.
 - Standard ArduPilot exclusion zones are horizontal-only (they block the whole column), and the altitude fence applies to the whole flight.
