@@ -57,8 +57,19 @@ Entry format: **YYYY-MM-DD — Title** · Decision · Notes / follow-ups.
 
 ## Hardware
 
+**2026-10-23 — Two-computer operating mode (replaces the split in the entry below)**
+- **CPU-only computer:** runs the video pipeline (OpenCV plus YOLO nano or small for weed detection and classification) and hosts the Mission Planner VM.
+- **GPU computer:** runs the watchers and d1-omni.
+- mavlink-router can still run on either.
+
+**2026-10-23 — Mission Planner in a VM on the CPU-only computer**
+- Mission Planner is part of the stack and runs in a virtual machine on the CPU-only computer. It doesn't run under Wine, which is hit-and-miss with it.
+- The VM is for testing, tuning, and relearning Mission Planner hands-on, since it has changed markedly since G last used it.
+- G needs it as a visual cue, with the numbers shown visually.
+- The VM talks to the outside world through mavlink-router, which forwards telemetry to it. That way the ground station and the decision models share the same telemetry stream.
+
 **2026-10-23 — Two ground-station computers**
-- **GPU computer:** RTX 3060, with 24 GB of VRAM in total once a second 3060 is added. It runs vision and the watchers.
+- **GPU computer:** RTX 3060, with 24 GB of VRAM in total once a second 3060 is added. _(The workload split was changed on 23 Oct, see the two-computer operating mode entry above.)_
 - **CPU-only computer:** failover and hot spare.
 - mavlink-router uses almost no resources and can run on either.
 - Note: two 12 GB cards are two separate pools of memory, not one 24 GB pool. Each model has to fit on one card unless it's split across both.
@@ -138,6 +149,12 @@ How G, the conversation model (Spray drone) and the decision models talk to each
 - Caveats:
   - Confidence isn't accuracy, so thresholds have to be calibrated against our own data.
   - Decision models are for go/no-go calls, not maths. Battery and height thresholds stay in plain code. Decision models make the higher-level calls on summaries of the drone's state or on camera frames.
+
+## Testing
+
+**2026-10-23 — YOLO versus d1-omni comparison**
+- Run the same replayed footage three ways: through YOLO alone, through d1-omni alone, and through both together.
+- Compare which catches more weeds with fewer false alarms before committing to anything.
 
 ## Open Questions
 
