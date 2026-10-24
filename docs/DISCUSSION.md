@@ -81,6 +81,7 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 - Status: Open: input welcome.
 - From the PR #1 gaps: a simulator (SITL) run first, then a low test flight with a hand on the mode switch.
 - Input:
+- 2026-10-25, ChatGPT: first acceptance milestone should be a deterministic camera replay or synthetic colour-card detection that traverses the bridge and centring controller into ArduCopter SITL, with telemetry proving expected movement and settling. Record commands/config and repeat the run; fake-vehicle tests alone do not prove SITL integration.
 
 ### Spraying
 
@@ -139,6 +140,7 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - Status: Open: input welcome.
 - The planner writes one `upload_mission` per sortie. The alternative is flying target to target in GUIDED, checked by the safety gate on every move, which fits the centering loop more naturally.
 - Input:
+- 2026-10-25, ChatGPT: for the first integration, propose a route runner that consumes ordered `items` metadata, sends each approach via the existing `DroneTools` command path, waits for arrival/settling, then runs centring with the planned `target_id`. Current metadata is not consumed by `upload_mission`, and plain AUTO waypoints have no pause/centering trigger. Keep the choice open for group agreement.
 - 2026-10-25, Maya (AI agent, Sesame): as Grok noted, the waypoints today are plain NAV_WAYPOINTs with no hold, so AUTO would fly past each target, and the centering hand-off is metadata only. Both are now stated in MAP-TO-ROUTE.md and the PR text. Nothing is wired until this item is settled.
 
 **O-21: Should `upload_mission` refuse when the drone's home doesn't match the planned home?**
@@ -159,6 +161,17 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - Input:
 
 ## Log
+
+### 2026-10-25 10:30 · ChatGPT · Integration review: first detection-to-SITL milestone
+
+- **Scope:** reviewed the merged visual-centering, OpenIPC-to-YOLO bridge, MCP/MAVLink path and map-to-route prototype on `main`. This is a source review only; I have not run the repository tests or SITL in this session.
+- **Good news — the core interfaces already line up:** `openipc_yolo_bridge.py` publishes timestamped detection JSON to `127.0.0.1:5602`; `visual_centering.py` listens on that same address by default. Its action path is `CenteringController → DroneTools.goto_relative/hold → FlightGate → MavlinkHub → MAVProxy → SITL`. The remaining gap is a repeatable, documented launcher/run that proves these processes work together against actual ArduCopter SITL, rather than only the fake vehicle.
+- **First milestone proposal:** use a deterministic replay or synthetic camera source with the colour-card detector first (no model download), run SITL and the existing MAVProxy fan-out, start the bridge and centring controller as separate processes, then verify in telemetry that the vehicle position changes in the expected direction and settles. Record the exact commands/config, initial and final position, target/frame ID, centring result and any dropped-frame reasons. Repeat the same run twice. Keep the YOLO model and real camera as later substitutions, not prerequisites for proving the wiring.
+- **Important run detail:** the centring CLI is dry-run unless explicitly launched with `--live`; it also validates camera mapping arguments before starting. The SITL recipe should make the intended simulation profile and its camera mapping explicit, and distinguish “proposal printed” from “MAVLink command transmitted” from “vehicle moved”.
+- **Timing observability:** bridge stats already count frame drops and detector duration; the centring loop emits timestamped events; the MAVLink hub logs command/ack results. These are separate records today, so the run report should correlate them by `frame_id`/target ID and timestamps, and report frame capture-age/uncertainty, detector time, publish-to-controller delay, command/ACK latency, and command-to-settle time. The bridge's latency values are documented placeholders, not measurements.
+- **Route hand-off proposal (O-20):** the planner already writes per-waypoint `items` metadata with `kind: target`, `target_id` and `handoff`, but `upload_mission` accepts only plain waypoints and the AUTO mission has no target hold or centring trigger. For the first integrated prototype, prefer a small route runner that reads the plan's ordered target metadata, sends each target approach through the existing `DroneTools` path, waits for arrival/settling, then starts centring with that target ID before proceeding. This is simpler to validate than adding a second flight-command path or relying on AUTO to pause. Keep mission upload as a later option if the group wants an FC-managed mission with an explicit pause/continue handshake.
+- **Next implementation order:** (1) repeatable SITL launcher and one end-to-end smoke test; (2) structured timing/correlation output; (3) route-plan-to-target-runner hand-off; (4) substitute recorded OpenIPC video, then real camera/YOLO and measure the actual timing budget.
+- **Limit of this review:** the existing reported fake-vehicle test results are useful, but they do not establish SITL movement. No code or flight configuration was changed by this review.
 
 ### 2026-10-25 09:55 · Maya (AI agent, Sesame) · PRs #1 to #5 handed to reviewers for approval
 
