@@ -109,6 +109,42 @@ def _opt_float(v) -> Optional[float]:
     return None if v is None else float(v)
 
 
+def all_finite(*values) -> bool:
+    """True when every value is a finite number. None (an optional field left
+    out) counts as fine. NaN or +/-inf from a bad packet does not."""
+    for v in values:
+        if v is None:
+            continue
+        try:
+            if not math.isfinite(float(v)):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+# MAVLink GLOBAL_POSITION_INT.hdg is UINT16_MAX (65535) when the heading is
+# unknown; divided by 100 that reads as 655.35 deg (timing issue T9).
+HDG_UNKNOWN_DEG = 655.35
+
+
+def valid_heading(h) -> Optional[float]:
+    """Heading in degrees, or None when it is missing or not a real heading.
+
+    Anything non-finite or outside 0 <= h < 360 (including the 655.35 deg
+    "unknown" value above) is treated as no heading at all, so it can never
+    rotate a nudge."""
+    if h is None:
+        return None
+    try:
+        h = float(h)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(h) or not (0.0 <= h < 360.0):
+        return None
+    return h
+
+
 def detection_from_xyxy(box: Tuple[float, float, float, float], confidence: float,
                         target_id: str, image_w: int, image_h: int, t: float,
                         **extra) -> Detection:
@@ -228,8 +264,11 @@ class HeadingHistory:
         self._s: Deque[Tuple[float, float]] = deque(maxlen=maxlen)
 
     def add(self, t: float, heading_deg: Optional[float]):
-        if heading_deg is not None:
-            self._s.append((t, float(heading_deg)))
+        # T9: a heading of 655.35 deg (MAVLink "unknown"), NaN or anything
+        # outside 0..360 is dropped here, so it is never matched to a frame.
+        h = valid_heading(heading_deg)
+        if h is not None and all_finite(t):
+            self._s.append((t, h))
 
     def at(self, t: float, max_skew_s: float) -> Optional[float]:
         best = min(self._s, key=lambda s: abs(s[0] - t), default=None)
@@ -239,12 +278,18 @@ class HeadingHistory:
 
 
 # =============================================================== controller
+# Hard ceiling on any single nudge. CenteringLimits.max_step_m and the
+# --max-step-m option may be set lower, never higher.
+MAX_STEP_CAP_M = 1.0
+
+
 @dataclass
 class CenteringLimits:
     default_step_m: float = 0.5        # fixed nudge when the model gives none
-    max_step_m: float = 1.0            # clamp on ANY nudge, model-chosen or not
+    max_step_m: float = 1.0            # clamp on ANY nudge, model-chosen or not (<= MAX_STEP_CAP_M)
     min_step_m: float = 0.05           # smaller than this = not worth a move
     deadband_frac: float = 0.06        # target within 6 % of half-frame = centred
+    confirm_frames: int = 3            # consecutive fresh centred frames before "centred"
     min_confidence: float = 0.5
     max_detection_age_s: float = 0.5   # frame older than this at decision time = stale
     settle_frame_delay_s: float = 0.2  # frame must be captured this long after settling
@@ -283,6 +328,11 @@ class CenteringController:
                  on_event: Optional[Callable[[StepLog], None]] = None):
         self.tools, self.source, self.camera = tools, source, camera
         self.lim = limits or CenteringLimits()
+        if not (0.0 < self.lim.max_step_m <= MAX_STEP_CAP_M):
+            raise ValueError(f"max_step_m must be above 0 and at most {MAX_STEP_CAP_M} m, "
+                             f"got {self.lim.max_step_m}")
+        if self.lim.confirm_frames < 1:
+            raise ValueError("confirm_frames must be at least 1")
         self.target_id = target_id
         self.clock, self.sleep = clock, sleep
         self.headings = HeadingHistory()
@@ -322,6 +372,13 @@ class CenteringController:
     def _usable(self, det: Optional[Detection], not_before: float) -> Tuple[bool, str]:
         if det is None:
             return False, "no detection"
+        # A bad packet (NaN or inf anywhere) skips this frame only; it must not
+        # reach the maths below or the gate, and it must not end the run.
+        if not all_finite(det.t, det.confidence, det.cx, det.cy, det.image_w, det.image_h,
+                          det.nudge_forward_m, det.nudge_right_m, det.heading_deg):
+            return False, "non-finite value in the detection"
+        if det.heading_deg is not None and valid_heading(det.heading_deg) is None:
+            return False, f"invalid heading on the frame ({det.heading_deg})"
         age = self.clock() - det.t
         if age > self.lim.max_detection_age_s:
             return False, f"stale frame ({age:.2f} s old)"
@@ -373,11 +430,16 @@ class CenteringController:
         """What the controller WOULD command for this frame. Sends nothing and
         skips the flight checks: for checking the camera mapping on the bench
         (hold the copter, put a target in view, see which way it would go)."""
+        if not all_finite(det.t, det.cx, det.cy, det.nudge_forward_m, det.nudge_right_m,
+                          det.heading_deg):
+            return {"frame_id": det.frame_id, "skipped": "non-finite value in the detection"}
         height = float(status.get("rel_alt") or 0.0) or 3.0
         nudge, src = self.plan_nudge(det, height)
         out = {"frame_id": det.frame_id, "centred": self._centred(det), "source": src,
                "assumed_height_m": height}
-        hdg = det.heading_deg if det.heading_deg is not None else status.get("heading")
+        hdg = valid_heading(det.heading_deg)
+        if hdg is None:
+            hdg = valid_heading(status.get("heading"))
         if nudge and hdg is not None:
             bf, br = self.camera.camera_to_body(*nudge)
             n, e = body_to_ned(bf, br, float(hdg))
@@ -422,6 +484,8 @@ class CenteringController:
         dry = bool(getattr(self.tools.hub, "dry_run", False))
         s = self._status()
         why = self._flight_ok(s)
+        if why is None and not self.camera.calibrated:
+            why = "camera mapping not calibrated (measure the mount first)"
         if why:
             self._event("refused_start", reason=why)
             return self._result(False, why)
@@ -430,6 +494,7 @@ class CenteringController:
         not_before = t_start - lim.max_detection_age_s   # first frame may predate the call
         moves = 0
         last_reason, progress_t, last_block = "", self.clock(), ""
+        centred_run: List[Optional[str]] = []    # frame ids of consecutive centred frames
         self._event("start", dry_run=dry, target_id=self.target_id, start=start)
 
         while True:
@@ -457,8 +522,21 @@ class CenteringController:
                 self._event("locked_target", target_id=det.target_id)
 
             if self._centred(det):
-                self._event("centred", frame_id=det.frame_id, cx=det.cx, cy=det.cy, moves=moves)
+                # Design note step 7: one centred frame is not enough. Count
+                # consecutive centred frames, each newer than the one before and
+                # all captured after the last hold (not_before already says so).
+                centred_run.append(det.frame_id)
+                not_before = det.t + 1e-6       # the next one must be a newer frame
+                progress_t = self.clock()       # a centred frame is progress
+                if len(centred_run) < lim.confirm_frames:
+                    self._event("centred_frame", n=len(centred_run), of=lim.confirm_frames,
+                                frame_id=det.frame_id)
+                    continue
+                self._event("centred", frame_id=det.frame_id, cx=det.cx, cy=det.cy,
+                            frames=list(centred_run), moves=moves)
                 return self._result(True, "target centred", moves=moves)
+            # A usable frame that is NOT centred breaks the streak.
+            centred_run = []
             if moves >= lim.max_iterations:
                 return self._stop(f"max_iterations ({lim.max_iterations}) reached", moves=moves)
 
@@ -473,18 +551,28 @@ class CenteringController:
                 not_before = det.t + 1e-6
                 continue
 
-            hdg_frame = det.heading_deg if det.heading_deg is not None else \
-                self.headings.at(det.t, lim.max_heading_skew_s)
+            hdg_frame = valid_heading(det.heading_deg)
+            if hdg_frame is None:
+                hdg_frame = self.headings.at(det.t, lim.max_heading_skew_s)
             if hdg_frame is None:
                 if last_block != "no heading sample near the frame time":
                     self._event("no_move", reason="no heading sample near the frame time")
                 last_block = "no heading sample near the frame time"
                 not_before = det.t + 1e-6
                 continue
-            if s.get("heading") is not None and \
-                    angle_diff_deg(float(s["heading"]), hdg_frame) > lim.max_heading_change_deg:
+            hdg_now = valid_heading(s.get("heading"))
+            if hdg_now is None:
+                # T9: no trustworthy heading right now (missing, NaN or 655.35),
+                # so we cannot check for yaw since the frame. Skip the frame.
+                if last_block != "no valid current heading":
+                    self._event("no_move", reason="no valid current heading",
+                                heading_now=s.get("heading"))
+                last_block = "no valid current heading"
+                not_before = det.t + 1e-6
+                continue
+            if angle_diff_deg(hdg_now, hdg_frame) > lim.max_heading_change_deg:
                 self._event("no_move", reason="copter yawed since the frame was taken",
-                            heading_frame=hdg_frame, heading_now=s["heading"])
+                            heading_frame=hdg_frame, heading_now=hdg_now)
                 last_block = "copter yawed since the frame was taken"
                 not_before = det.t + 1e-6
                 continue
@@ -656,6 +744,24 @@ def run_demo(offset_fwd_m: float = 1.4, offset_right_m: float = -0.9,
         fv.stop()
 
 
+def validate_cli_args(a) -> Optional[str]:
+    """Checks on the command line, before anything connects. Returns an error
+    message, or None when the arguments are acceptable."""
+    if a.camera_yaw_deg is None:
+        return ("live/dry-run use needs --camera-yaw-deg and --camera-calibrated "
+                "(measure the mount first; --plan-only needs only --camera-yaw-deg)")
+    if not a.camera_calibrated and not a.plan_only:
+        return ("live/dry-run use needs --camera-calibrated (measure the mount first; "
+                "--plan-only, the bench tool for measuring it, does not)")
+    if a.plan_only and a.live:
+        return "--plan-only never transmits; drop --live"
+    if not (0.0 < a.max_step_m <= MAX_STEP_CAP_M):
+        return f"--max-step-m must be above 0 and at most {MAX_STEP_CAP_M}"
+    if a.confirm_frames < 1:
+        return "--confirm-frames must be at least 1"
+    return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Visual centering with measured GUIDED nudges.")
     ap.add_argument("--demo", action="store_true",
@@ -672,7 +778,10 @@ def main(argv=None):
     ap.add_argument("--camera-calibrated", action="store_true",
                     help="I measured the camera yaw/mirroring on this airframe")
     ap.add_argument("--target-id")
-    ap.add_argument("--max-step-m", type=float, default=1.0)
+    ap.add_argument("--max-step-m", type=float, default=MAX_STEP_CAP_M,
+                    help=f"largest single nudge in metres (at most {MAX_STEP_CAP_M})")
+    ap.add_argument("--confirm-frames", type=int, default=CenteringLimits.confirm_frames,
+                    help="consecutive fresh centred frames needed before reporting centred")
     ap.add_argument("--max-iterations", type=int, default=12)
     ap.add_argument("--sim-camera", metavar="FWD,RIGHT",
                     help="SITL only: no detector; pretend camera sees a target FWD/RIGHT "
@@ -680,7 +789,8 @@ def main(argv=None):
     ap.add_argument("--model-gain", type=float,
                     help="with --sim-camera: stand-in model picks nudge = gain x offset")
     ap.add_argument("--plan-only", action="store_true",
-                    help="print the planned nudge for each new detection; never moves")
+                    help="bench tool: print the planned nudge for each new detection; never "
+                         "moves, so --camera-calibrated is not required")
     ap.add_argument("--live", action="store_true",
                     help="actually transmit (otherwise dry_run is forced on)")
     a = ap.parse_args(argv)
@@ -690,17 +800,18 @@ def main(argv=None):
         print(json.dumps({k: v for k, v in res.items() if k != "log"}))
         return 0 if res["centred"] else 1
 
-    if a.camera_yaw_deg is None or not a.camera_calibrated:
-        ap.error("live/dry-run use needs --camera-yaw-deg and --camera-calibrated "
-                 "(measure the mount first)")
+    err = validate_cli_args(a)
+    if err:
+        ap.error(err)
     from drone_tools import DroneTools
     from stack_config import load_config
     cfg = load_config(a.config)
     if a.mavlink_url:
         cfg.mavlink.url = a.mavlink_url
-    if not a.live:
-        cfg.safety.dry_run = True
-    cam = CameraMapping(a.camera_yaw_deg, a.mirrored, a.hfov_deg, a.vfov_deg, True)
+    if not a.live or a.plan_only:
+        cfg.safety.dry_run = True       # --plan-only never sends; belt and braces
+    cam = CameraMapping(a.camera_yaw_deg, a.mirrored, a.hfov_deg, a.vfov_deg,
+                        calibrated=bool(a.camera_calibrated))
     if a.sim_camera and cfg.profile != "sitl":
         ap.error("--sim-camera is for SITL only (config profile must be 'sitl')")
     if a.sim_camera and (a.hfov_deg is None or a.vfov_deg is None):
@@ -725,7 +836,8 @@ def main(argv=None):
             src = SimulatedDownCamera(tools.node.get_status, tgt, cam,
                                       vision_nudge=proportional_model(a.model_gain)
                                       if a.model_gain else None)
-        lim = CenteringLimits(max_step_m=a.max_step_m, max_iterations=a.max_iterations)
+        lim = CenteringLimits(max_step_m=a.max_step_m, max_iterations=a.max_iterations,
+                              confirm_frames=a.confirm_frames)
         if a.plan_only:
             ctl = CenteringController(tools, src, cam, lim, target_id=a.target_id)
             last = None

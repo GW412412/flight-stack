@@ -14,9 +14,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from visual_centering import (CameraMapping, CenteringController, CenteringLimits,
-                              Detection, HeadingHistory, SimulatedDownCamera,
-                              body_to_ned, detection_from_xyxy, proportional_model)
+from visual_centering import (MAX_STEP_CAP_M, CameraMapping, CenteringController,
+                              CenteringLimits, Detection, HeadingHistory,
+                              SimulatedDownCamera, all_finite, body_to_ned,
+                              detection_from_xyxy, proportional_model, valid_heading,
+                              validate_cli_args)
 
 CAM = CameraMapping(yaw_offset_deg=0.0, hfov_deg=80.0, vfov_deg=64.0, calibrated=True)
 M_PER_DEG = 111_320.0
@@ -152,7 +154,8 @@ def test_camera_mount_yaw_and_mirroring():
 
 def test_rotated_mount_and_heading_still_converge():
     clock, tools = Clock(), FakeTools(heading=135.0)
-    cam = CameraMapping(yaw_offset_deg=-90.0, mirrored=True, hfov_deg=80, vfov_deg=64)
+    cam = CameraMapping(yaw_offset_deg=-90.0, mirrored=True, hfov_deg=80, vfov_deg=64,
+                        calibrated=True)
     src = sim_source(tools, clock, 0.9, 1.1, camera=cam)
     res = make(tools, src, clock, camera=cam).run()
     assert res["centred"], res["reason"]
@@ -346,6 +349,160 @@ def test_cli_refuses_unmeasured_camera(capsys):
     with pytest.raises(SystemExit):
         main(["--config", "x.toml"])
     assert "camera-calibrated" in capsys.readouterr().err
+
+
+# ------------------------------------------------ review follow-ups (PR #1)
+class SeqFeed:
+    """One scripted frame per clock tick, each with a fresh timestamp.
+
+    Each entry is a dict of det() keyword arguments. The last entry repeats."""
+
+    def __init__(self, clock, frames):
+        self.clock, self.frames, self.i, self.last_t = clock, list(frames), -1, None
+
+    def latest(self):
+        if self.last_t != self.clock():
+            self.last_t = self.clock()
+            self.i = min(self.i + 1, len(self.frames) - 1)
+        return det(self.clock, **self.frames[self.i])
+
+
+def _events(res, name):
+    return [e for e in res["log"] if e["event"] == name]
+
+
+CENTRED = {"cx": 321, "cy": 241}
+OFF = {"cx": 500, "cy": 100}
+
+
+def test_success_needs_three_consecutive_fresh_centred_frames():
+    clock, tools = Clock(), FakeTools()
+    res = make(tools, SeqFeed(clock, [CENTRED]), clock).run()
+    assert res["centred"] and tools.moves() == []
+    assert len(_events(res, "centred_frame")) == 2
+    assert len(_events(res, "centred")[0]["detail"]["frames"]) == 3
+
+
+def test_one_centred_frame_repeated_is_not_success():
+    clock, tools = Clock(), FakeTools()
+    frozen = det(clock, **CENTRED)                      # the same frame forever
+    res = make(tools, Feed(lambda: frozen), clock, frame_timeout_s=1.0,
+               max_detection_age_s=50.0).run()
+    assert not res["centred"] and tools.moves() == []
+    assert "no usable frame" in res["reason"]
+
+
+def test_off_centre_frame_resets_the_streak_and_counts_restart_after_the_hold():
+    clock, tools = Clock(), FakeTools()
+    frames = [CENTRED, CENTRED, OFF] + [CENTRED] * 40
+    res = make(tools, SeqFeed(clock, frames), clock).run()
+    assert res["centred"] and len(tools.moves()) == 1
+    names = [e["event"] for e in res["log"]]
+    hold_i = names.index("hold")
+    assert names[hold_i + 1:].count("centred_frame") == 2      # fresh streak after the hold
+    assert names[-1] == "centred"
+
+
+def test_confirm_frames_is_configurable():
+    clock, tools = Clock(), FakeTools()
+    res = make(tools, SeqFeed(clock, [CENTRED]), clock, confirm_frames=2).run()
+    assert res["centred"] and len(_events(res, "centred_frame")) == 1
+
+
+def test_t9_heading_65535_is_not_a_heading():
+    assert valid_heading(655.35) is None and valid_heading(float("nan")) is None
+    assert valid_heading(360.0) is None and valid_heading(-1.0) is None
+    assert valid_heading(None) is None and valid_heading(359.99) == 359.99
+    h = HeadingHistory()
+    h.add(10.0, 655.35)
+    h.add(10.1, float("inf"))
+    assert h.at(10.0, 0.5) is None
+    h.add(10.2, 90.0)
+    assert h.at(10.0, 0.5) == 90.0
+
+
+def test_t9_unknown_vehicle_heading_never_moves():
+    clock, tools = Clock(), FakeTools(heading=655.35)
+    res = make(tools, Feed(lambda: det(clock, **OFF)), clock, frame_timeout_s=1.0).run()
+    assert tools.moves() == [] and not res["centred"]
+
+
+def test_t9_unknown_heading_on_the_frame_is_skipped():
+    clock, tools = Clock(), FakeTools()
+    res = make(tools, Feed(lambda: det(clock, heading_deg=655.35, **OFF)), clock,
+               frame_timeout_s=1.0).run()
+    assert tools.moves() == [] and "invalid heading" in res["reason"]
+
+
+@pytest.mark.parametrize("bad", [
+    {"cx": float("nan"), "cy": 100},
+    {"cx": 500, "cy": float("inf")},
+    {"cx": 500, "cy": 100, "age": float("nan")},
+    {"cx": 500, "cy": 100, "conf": float("nan")},
+    {"cx": 500, "cy": 100, "nudge_right_m": float("nan")},
+    {"cx": 500, "cy": 100, "nudge_forward_m": float("-inf")},
+])
+def test_non_finite_frame_is_skipped_and_the_run_carries_on(bad):
+    clock, tools = Clock(), FakeTools()
+    res = make(tools, SeqFeed(clock, [bad, bad, CENTRED]), clock).run()
+    assert res["centred"], res["reason"]
+    assert tools.moves() == []
+    assert any("non-finite" in e["detail"].get("reason", "") for e in _events(res, "skip_frame"))
+
+
+def test_all_finite_helper():
+    assert all_finite(1, 2.5, None) and not all_finite(1, float("nan"))
+    assert not all_finite(float("inf")) and not all_finite("x")
+
+
+def test_max_step_capped_at_one_metre():
+    clock, tools = Clock(), FakeTools()
+    assert MAX_STEP_CAP_M == 1.0
+    with pytest.raises(ValueError, match="max_step_m"):
+        make(tools, Feed(lambda: None), clock, max_step_m=1.5)
+    make(tools, Feed(lambda: None), clock, max_step_m=0.6)        # lower is fine
+
+
+def test_uncalibrated_camera_refused_at_run_start():
+    clock, tools = Clock(), FakeTools()
+    cam = CameraMapping(yaw_offset_deg=0.0, hfov_deg=80.0, vfov_deg=64.0)
+    res = make(tools, Feed(lambda: det(clock, **OFF)), clock, camera=cam).run()
+    assert not res["centred"] and tools.moves() == [] and "not calibrated" in res["reason"]
+
+
+def _cli(**kw):
+    a = dict(camera_yaw_deg=0.0, camera_calibrated=False, plan_only=False, live=False,
+             max_step_m=1.0, confirm_frames=3)
+    a.update(kw)
+    return SimpleNamespace(**a)
+
+
+def test_cli_plan_only_needs_no_calibration_flag():
+    assert validate_cli_args(_cli(plan_only=True)) is None
+    assert "camera-calibrated" in validate_cli_args(_cli())
+    assert validate_cli_args(_cli(camera_calibrated=True)) is None
+    assert "camera-yaw-deg" in validate_cli_args(_cli(camera_yaw_deg=None, plan_only=True))
+    assert "--live" in validate_cli_args(_cli(plan_only=True, live=True))
+
+
+def test_cli_caps_max_step_and_checks_confirm_frames(capsys):
+    assert "max-step-m" in validate_cli_args(_cli(camera_calibrated=True, max_step_m=1.01))
+    assert "max-step-m" in validate_cli_args(_cli(camera_calibrated=True, max_step_m=0.0))
+    assert "confirm-frames" in validate_cli_args(_cli(camera_calibrated=True, confirm_frames=0))
+    from visual_centering import main
+    with pytest.raises(SystemExit):
+        main(["--config", "x.toml", "--camera-yaw-deg", "0", "--camera-calibrated",
+              "--max-step-m", "2"])
+    assert "max-step-m" in capsys.readouterr().err
+
+
+def test_plan_only_skips_non_finite_frame():
+    clock, tools = Clock(), FakeTools()
+    ctl = make(tools, Feed(lambda: None), clock)
+    out = ctl.plan_only(det(clock, cx=float("nan")), tools.get_status())
+    assert "non-finite" in out["skipped"]
+    out = ctl.plan_only(det(clock, **OFF), dict(tools.get_status(), heading=655.35))
+    assert "ned" not in out                      # no valid heading: no earth-frame move shown
 
 
 # =============================================================== end to end
