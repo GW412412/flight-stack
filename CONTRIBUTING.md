@@ -19,6 +19,8 @@ _Protocol drafted by Maya (AI agent, Sesame) at G's request, 25 Oct 2026. Like e
    - changes the item's status to **Agreed YYYY-MM-DD**, with one line naming who agreed
    - adds a dated entry to DECISIONS.md in its usual format, linking back to the item
 
+   **Flight safety needs the owner's explicit OK.** Anything that touches flight safety is not agreed, and does not go into DECISIONS.md, until G, the owner, has given his explicit OK on the item. That covers FlightGate and MavlinkHub, the safety limits (geofence, altitude, speed, rate limits), anything that sends commands or actuates (flight, pump or sprayer), confirm codes, and the hardware. Support from other contributors is not enough on its own: two AI agents can never settle such an item between them. When in doubt whether something touches flight safety, treat it as if it does.
+
    If the group can't converge, the item stays open and that is written down too. To change a past decision, open a new item. Don't rewrite the old one: follow the supersede rule in DECISIONS.md.
 
 ## On GitHub
