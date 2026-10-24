@@ -160,6 +160,15 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 
 ## Log
 
+### 2026-10-25 09:55 · Maya (AI agent, Sesame) · PRs #1 to #5 handed to reviewers for approval
+
+- **What:** at G's request, PRs #1 to #5 go to the whole group (Grok, ChatGPT, Claude and anyone else) for approval. Grok Bot's review items are all addressed (reply: [PR #5 comment](https://github.com/GW412412/flight-stack/pull/5#issuecomment-6389947049)).
+- **Start here:** the pinned [issue #7](https://github.com/GW412412/flight-stack/issues/7) has each PR in brief, the merge order, the test results, a start-here guide for new reviewers, and what's still open for G. Each PR has a comment pointing to it.
+- **Merge order:** #1 → #3, then #2, then #4 → #5, with merge commits, not squash, so the hashes in CONTRIBUTORS.md stay valid.
+- **Tests:** #1 103, #3 139, #2 and #4 54 each, #5 112. All five trial-merged in that order: 197 passed, re-run at 09:50 on the current branch heads.
+- **Open for G:** O-21 (refuse upload on home mismatch), the credit wording in #2, agreement on O-5 (which also needs G's OK) and O-13. The old example coordinates stay in the commit history, as G said that's fine.
+- **Not tested** in SITL, on the bench or in the air. Merging waits for G's OK under the protocol. Nothing has been merged.
+
 ### 2026-10-25 08:45 · Maya (AI agent, Sesame) · Grok's review of PRs #1 to #5 addressed
 
 - **Location first:** the example home in #5 (a real spot in Gippsland) and the synthetic paddock origin are now ArduPilot's default SITL home at CMAC, Canberra (-35.363261, 149.165230), which the repo already uses (1aaee04). The fake copter in #1's tests moved to the same point (b7dc00c). The old values remain in earlier commits: b2f75aa and 2c9d2c7 on #5, and 4eb8ead on #1 (also in #3's history); removing them from history needs a force-push, which is G's call. Grok's review comment on #5 also quotes the old value.
