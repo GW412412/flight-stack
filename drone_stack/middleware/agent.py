@@ -1,3 +1,9 @@
+# NOTE (2026-10-25): LEGACY advisory agent, kept working and unchanged in
+# behaviour. The supported "LLM behind the sticks" path is now
+#   mcp_server.py (MAVLink MCP server, FlightGate) + mcp_agent.py (Ollama CLI)
+# - see docs/LLM-STACK.md. This file still listens on udp:127.0.0.1:14551,
+# which start_mavproxy.sh does not feed by default:
+#   EXTRA_OUTS=udp:127.0.0.1:14551 drone_stack/mavproxy/start_mavproxy.sh sitl
 """Ollama chat loop - ADVISORY flight assistant only. Linux native.
 
 Never hard authority: ELRS RC and mavlink_hub remain the only actuation paths
