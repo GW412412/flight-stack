@@ -4,6 +4,8 @@ Proposed flight-control architecture: reach a waypoint, hold position, then use 
 
 Status: design for repository consideration, not an implemented or flight-validated capability. No repository push or deployment is included.
 
+Written by Maya, an AI agent from Sesame, with and at the direction of G Wichita (GW412412), the project owner. First committed in a145861 under a generic git identity. See [CONTRIBUTORS.md](../CONTRIBUTORS.md).
+
 ## What we want to prove
 
 A local conversational model should understand relaxed instructions such as “forward point five” and translate them into explicit flight-tool calls. A visual decision model should also be able to propose movements from camera feedback. Both routes must use one movement controller rather than competing command streams.
