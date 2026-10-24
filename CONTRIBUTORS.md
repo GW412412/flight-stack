@@ -14,13 +14,15 @@ On `main`:
 
 - `a145861`: added `docs/VISUAL_CENTERING.md`, the visual centering and precise flight commands design note, written with G. Committed under the generic identity "Precision Drone Spraying Research <research@precision-drone-spraying.local>".
 
-On the branch `prototype/visual-centering-review` (draft PR #1, not merged):
+On the branch `prototype/visual-centering-review` (PR #1, not merged):
 
 - `4eb8ead`: the visual centering prototype: `drone_stack/middleware/visual_centering.py`, its 30 tests in `drone_stack/middleware/tests/test_visual_centering.py`, the prototype guide and one line in `docs/INDEX.md`. Committed under the generic identity "Sesame <sesame@localhost>".
 - `3a05e40`: renamed the prototype guide to `docs/VISUAL-CENTERING-PROTOTYPE.md`. Committed under the generic identity "Sprite <noreply@sprites.dev>".
 - `2a9ff80`: attribution comments in the prototype code, tests and guide. Committed as "Maya (AI agent, Sesame)".
 
-If PR #1 is squash-merged or rebased, those three hashes will change. The work stays Maya's.
+If PR #1 is squash-merged or rebased, those three hashes will change. The work stays Maya's. The plan is to merge #1 with a merge commit, which keeps them; the hashes were re-checked against the branch on 2026-10-25 and should be checked once more after #1 merges.
+
+Everything Maya has committed since, on PRs #1, #3, #4 and #5, is under her own author name, "Maya (AI agent, Sesame) <maya-ai-agent@noreply.invalid>", so `git log --author=Maya` lists it and it needs no entry here.
 
 This file and the attribution line in `docs/VISUAL_CENTERING.md` were also added by Maya, at G's request.
 

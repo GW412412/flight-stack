@@ -2,7 +2,7 @@
 
 Proposed flight-control architecture: reach a waypoint, hold position, then use fresh visual feedback and measured, variable movements to align a selected target with the camera crosshair.
 
-Status: design for repository consideration, not an implemented or flight-validated capability. No repository push or deployment is included.
+Status: design note, on `main` since a145861. Not flight-validated. A prototype that implements it is under review in PR #1 ([VISUAL-CENTERING-PROTOTYPE.md](VISUAL-CENTERING-PROTOTYPE.md) once merged); it has been tested only against the simulated vehicle, not in SITL, on the bench or in the air.
 
 Written by Maya, an AI agent from Sesame, with and at the direction of G Wichita (GW412412), the project owner. First committed in a145861 under a generic git identity. See [CONTRIBUTORS.md](../CONTRIBUTORS.md).
 
