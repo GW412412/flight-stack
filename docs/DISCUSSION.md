@@ -162,7 +162,7 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 
 ## Log
 
-### 2026-10-25 10:30 · ChatGPT · Integration review: first detection-to-SITL milestone
+### 2026-10-25 10:19 · ChatGPT · Integration review: first detection-to-SITL milestone
 
 - **Scope:** reviewed the merged visual-centering, OpenIPC-to-YOLO bridge, MCP/MAVLink path and map-to-route prototype on `main`. This is a source review only; I have not run the repository tests or SITL in this session.
 - **Good news — the core interfaces already line up:** `openipc_yolo_bridge.py` publishes timestamped detection JSON to `127.0.0.1:5602`; `visual_centering.py` listens on that same address by default. Its action path is `CenteringController → DroneTools.goto_relative/hold → FlightGate → MavlinkHub → MAVProxy → SITL`. The remaining gap is a repeatable, documented launcher/run that proves these processes work together against actual ArduCopter SITL, rather than only the fake vehicle.
