@@ -1,8 +1,12 @@
-# Precision Drone Spraying — ArduPilot Stack Research
+# flight-stack
 
-Local research notes and starter configs for building a **precision agricultural spray drone** on the **ArduPilot / ArduCopter** software stack.
+A modular, supervised LLM + MAVLink companion stack for an ArduPilot multirotor — work in progress.
 
-> **Status:** Local git repo only. Not pushed. Not made public.  
+Research notes and example configs for a small agricultural spot-spray multirotor on **ArduPilot / ArduCopter**.
+
+_Formerly named `precision-drone-spraying`; old links redirect here._
+
+> **Status:** Work in progress, built module by module.  
 > Content is research notes + clearly marked **example** configs — not official vendor recommendations.
 
 ## What’s in this repo

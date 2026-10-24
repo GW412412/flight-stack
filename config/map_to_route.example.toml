@@ -1,0 +1,77 @@
+# Example settings for drone_stack/middleware/map_to_route.py
+# (ODM map -> targets -> waypoint sorties). Design: docs/MAP-TO-ROUTE.md.
+# Contributed by Maya (AI agent, Sesame). Experimental.
+#
+# Run from drone_stack/middleware:
+#   python map_to_route.py --config ../../config/map_to_route.example.toml \
+#       --project /path/to/odm/project --home=-35.363261,149.165230 --out plan/
+# Write --home with "=": a negative latitude otherwise reads as an option.
+#
+# Every value marked PLACEHOLDER needs a real measurement before it means
+# anything. Hard limits (max height, geofence, speed, mission items) are NOT
+# set here: they come from the stack config named in [limits], the same file
+# the MCP server and the safety gate use.
+
+[map]
+# Used when --project is not given. ODM's default output paths:
+ortho = "/path/to/odm/project/odm_orthophoto/odm_orthophoto.tif"
+dsm = "/path/to/odm/project/odm_dem/dsm.tif"     # needs ODM --dsm
+dtm = "/path/to/odm/project/odm_dem/dtm.tif"     # needs ODM --dtm (required for routing)
+# Horizontal error of the map, 1 sigma, metres. 3.0 is the middle of ODM's
+# 2 to 6 m for a survey without GCPs or RTK. With RTK-tagged photos or GCPs,
+# set it from the ODM report instead.
+horizontal_sigma_m = 3.0
+captured_at = "2026-10-20"   # date the survey was flown (map age warnings)
+
+[home]
+# Take-off point. --home on the command line overrides it. Every height in
+# the plan is relative to this point's ground height in the DTM.
+latlon = [-35.363261, 149.165230]   # DUMMY: ArduPilot's default SITL home (CMAC, Canberra), not a real paddock
+
+[tiles]
+size_px = 640
+overlap_px = 128     # must be larger than the biggest weed in pixels
+
+[detector]
+# "colour_blob" is a bench and test stand-in, NOT a weed classifier.
+kind = "colour_blob"
+exg_min = 0.12
+min_area_px = 20
+max_canopy_h_m = 0.6   # drop anything taller than this (shrubs, trees, stock)
+
+# For a trained model, comment out the block above and use:
+# kind = "ultralytics_seg"
+# weights = "/path/to/runs/segment/train/weights/best.pt"  # must exist; never downloaded
+# channels = 3            # 4 = RGB + height above ground (see docs/MAP-TO-ROUTE.md)
+# input_order = "BGR"     # "BGRH" or similar for 4 channels; must match training (open question)
+# chm_full_scale_m = 2.0  # PLACEHOLDER: height mapped to 255 in channel 4; must match training
+# conf = 0.25
+# device = "0"            # GPU index, or "cpu"
+
+[zones]
+# GeoJSON files of Polygon / MultiPolygon features in lon/lat. Leave out to
+# use none. Targets outside spray_zone are dropped; legs never cross no_fly.
+# spray_zone = "/path/to/paddock.geojson"
+# no_fly = "/path/to/no_fly.geojson"
+
+[limits]
+stack_config = "../../config/llm_stack.pixhawk.toml"
+
+[route]
+approach_agl_m = 6.0           # PLACEHOLDER camera height over a target for centering
+max_approach_agl_m = 12.0      # PLACEHOLDER
+obstacle_clearance_m = 3.0     # gap kept above the DSM (trees, sheds, fences)
+takeoff_alt_m = 8.0
+rtl_alt_m = 15.0               # must match RTL_ALT_M on the Pixhawk
+cruise_ms = 2.5                # must not exceed the gate's max_speed_ms
+climb_ms = 1.0                 # PLACEHOLDER (WP_SPD_UP)
+descend_ms = 0.75              # PLACEHOLDER (WP_SPD_DN)
+dwell_s = 20.0                 # PLACEHOLDER centering time per target
+battery_usable_s = 600.0       # PLACEHOLDER measured hover time with payload
+battery_reserve_frac = 0.30
+tank_litres = 0.5
+geofence_margin_m = 3.0
+drone_horizontal_sigma_m = 1.5 # PLACEHOLDER; about 0.02 with an RTK fix
+search_sigma_k = 2.0
+camera_hfov_deg = 90.0         # PLACEHOLDER live camera field of view, not measured
+max_map_age_days = 14.0

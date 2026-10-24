@@ -1,0 +1,87 @@
+# OpenIPC -> YOLO bridge settings (experimental).
+# Contributed by Maya (AI agent, Sesame), October 2026.
+# Every timing number below is a PLACEHOLDER until measured on the real link.
+# Run:  python drone_stack/middleware/openipc_yolo_bridge.py --config config/vision_bridge.example.toml --budget
+
+[video]
+# RTSP pull from the camera. The password comes from the environment, not this file:
+#   export OPENIPC_PASSWORD=...
+url = "rtsp://root:${OPENIPC_PASSWORD}@192.168.1.10:554/stream=1"
+# url = "rtp"            # RTP/UDP push (WFB-NG / APFPV) via GStreamer, see rtp_port / rtp_codec
+# url = "recording.mp4"  # bench replay of a recorded file
+backend = "ffmpeg"       # ffmpeg | gstreamer | any
+rtp_port = 5600
+rtp_codec = "h265"
+rtsp_transport = "udp"
+open_timeout_s = 5.0
+read_timeout_s = 2.0
+reconnect_backoff_s = 0.5
+stall_s = 1.0
+source_id = "cam0"
+
+[detector]
+kind = "yolo"            # yolo | colour (bench card) | none
+model_path = "models/weeds.pt"
+imgsz = 640
+conf = 0.25
+iou = 0.45
+device = ""              # "" = Ultralytics default, "0" = first GPU, "cpu"
+classes = []             # class ids to keep; [] = all
+tracker = "bytetrack.yaml"   # "" = the bridge's simple centroid tracker
+allow_download = false   # never fetch weights from the internet
+half = false
+colour_bgr = [0, 0, 255]
+colour_tol = 60
+
+[target]
+policy = "centre"        # centre | confidence
+min_confidence = 0.5
+class_names = []         # e.g. ["thistle"]; [] = any class
+min_track_frames = 3     # frames a target must be seen before it is offered
+lost_after_s = 1.0
+
+[capture]
+# How the capture time of each frame is estimated (see vision_clock.py):
+#   arrival     = arrival - [min_latency_s, max_latency_s]   (works anywhere; assumed)
+#   stream_pts  = decoder pts + measured jitter floor - min_latency_s
+#   camera_wall = camera clock + camera_to_gs_offset_s
+method = "arrival"
+min_latency_s = 0.035
+max_latency_s = 0.200
+min_latency_uncertainty_s = 0.030
+camera_to_gs_offset_s = 0.0
+camera_clock_uncertainty_s = 0.050
+arrival_slack_s = 0.010
+pts_window_s = 10.0
+pts_min_samples = 10
+pts_jump_s = 0.25
+measured = false         # set true only after measuring glass-to-glass latency
+
+[pipeline]
+max_frame_age_s = 0.15
+max_capture_uncertainty_s = 0.25
+max_publish_age_s = 0.45
+# Copies of the controller's CenteringConfig values, for the budget report only.
+controller_max_detection_age_s = 0.5
+controller_settle_frame_delay_s = 0.2
+# Rough per-frame processing times for the budget report. UNMEASURED.
+expected_detect_s = 0.033
+expected_observer_s = 0.2
+
+[observer]
+# Slow vision model proposing nudges. Needs a VisionObserver wired in code.
+enabled = false
+max_rate_hz = 5.0
+
+[telemetry]
+# Heading from flight-controller-timestamped telemetry. Needs an in-process MavNode.
+enabled = false
+require_heading = true
+max_heading_spread_deg = 3.0
+telem_min_latency_s = 0.0
+max_extrapolate_s = 0.15
+max_yaw_rate_dps = 10.0
+
+[output]
+udp = "127.0.0.1:5602"   # the existing UdpJsonDetectionSource port; "" = off
+print_json = false
