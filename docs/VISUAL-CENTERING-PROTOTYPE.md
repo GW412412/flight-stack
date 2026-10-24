@@ -9,10 +9,10 @@ Code: `drone_stack/middleware/visual_centering.py`. Tests: `drone_stack/middlewa
 ## How one run works
 
 1. You fly the copter yourself (or with the existing tools) into GUIDED, armed, hovering at least 2 m up. The controller never arms, takes off or changes mode.
-2. It takes the newest detection. The frame must be fresh (default under 0.5 s old), confident enough (default 0.5), the locked target id, and inside the picture.
-3. If the target is within the deadband (6 % of half the frame from the centre), it reports centred and stops.
+2. It takes the newest detection. The frame must be fresh (default under 0.5 s old), confident enough (default 0.5), the locked target id, and inside the picture. A frame with a non-finite value (NaN or infinity in `t`, `cx`, `cy`, the confidence, the nudge or the heading) or a heading outside 0 to 360 deg is skipped; it does not end the run.
+3. If the target is within the deadband (6 % of half the frame from the centre), that frame counts towards success. It reports centred and stops only after `confirm_frames` (default 3) consecutive frames show the target centred, each newer than the one before and all captured after the last hold. A usable frame that is not centred resets the count.
 4. Otherwise it picks a nudge in the camera frame (forward = top of the picture, right = right edge):
-   - **Vision model's choice**: if the detection carries `nudge_forward_m` / `nudge_right_m`, that is used, clamped to `max_step_m` (1.0 m), ignored below `min_step_m` (5 cm), and refused if it points away from where the target is in the picture.
+   - **Vision model's choice**: if the detection carries `nudge_forward_m` / `nudge_right_m`, that is used, clamped to `max_step_m` (1.0 m, which is also the most `max_step_m` can be set to), ignored below `min_step_m` (5 cm), and refused if it points away from where the target is in the picture.
    - **Fixed step**: with no model nudge, 0.5 m toward the target ("forward point five"), or less if the target is closer than that.
 5. The nudge is turned camera frame to body frame (camera mount) to north/east (heading at the time the frame was captured). `goto_relative` takes north/east, so this step matters.
 6. The move goes through `DroneTools.goto_relative`, so the FlightGate still checks actuation, link, pilot override, RC inhibit switch, rate limit, geofence, altitude window and GUIDED.
@@ -31,8 +31,10 @@ Code: `drone_stack/middleware/visual_centering.py`. Tests: `drone_stack/middlewa
 | 12 moves, or a move that would end over 5 m from the start | Stops and holds. |
 | Rate limit | Waits, then decides again on a newer frame. |
 | Stale / low confidence / other target / out of frame | That frame is skipped, no move. |
+| NaN or infinity anywhere in the detection, or a heading outside 0 to 360 deg | That frame is skipped, no move. |
 | Model nudge points away from the target | That frame is skipped, no move. |
 | No heading sample within 0.3 s of the frame, or yawed over 5 deg since | That frame is skipped, no move. |
+| Vehicle heading unknown (MAVLink sends 65535, read as 655.35 deg; timing issue T9) | That heading sample is dropped and the frame is skipped, no move. |
 
 All limits live in `CenteringLimits`.
 
@@ -44,7 +46,7 @@ All limits live in `CenteringLimits`.
 - `mirrored`: the picture is flipped left to right.
 - `hfov_deg`, `vfov_deg`: lens field of view. With height above ground these turn pixels into metres (pinhole model, camera straight down, flat ground). Without them the controller needs the model's nudge and cannot sanity-check it.
 
-There is no safe default: a camera mounted 180 deg off will walk the copter away from the target (one of the tests shows the 5 m travel bound catching exactly that). The command-line runner refuses to start until `--camera-yaw-deg` and `--camera-calibrated` are given.
+There is no safe default: a camera mounted 180 deg off will walk the copter away from the target (one of the tests shows the 5 m travel bound catching exactly that). The command-line runner refuses to start until `--camera-yaw-deg` and `--camera-calibrated` are given, and the controller itself refuses to start a run with an uncalibrated mapping. The one exception is `--plan-only`, the bench tool for measuring the mount: it needs only `--camera-yaw-deg`, never sends anything, and forces dry run on.
 
 Height comes from `rel_alt` (height above home), not from a rangefinder. Over sloping ground that makes the pixel-to-metre scale wrong; ground following is a later step.
 
@@ -65,15 +67,16 @@ The detector process sends one JSON object per frame by UDP, default `127.0.0.1:
 
 The live OpenIPC video to YOLO to UDP sender is not part of this change.
 
-## Applying and running
+## Running
 
-From the repository root:
+The code is on this branch, so there is nothing to apply. From the repository root, using the venv from [LLM-STACK.md](LLM-STACK.md) (`drone_stack/.venv`):
 
 ```bash
-git am 0001-visual-centering.patch
+python3 -m venv drone_stack/.venv                                   # once
+drone_stack/.venv/bin/pip install -r drone_stack/middleware/requirements.txt
+. drone_stack/.venv/bin/activate
 cd drone_stack/middleware
-. .venv/bin/activate            # the venv from requirements.txt
-python -m pytest -q tests        # 84 tests: the 54 existing + 30 new
+python -m pytest -q tests        # 103 tests: the 54 existing + 49 new
 python visual_centering.py --demo                # model-chosen nudges, fake vehicle
 python visual_centering.py --demo --fixed-step   # fixed 0.5 m steps
 ```
@@ -98,10 +101,12 @@ python visual_centering.py --config ../../config/llm_stack.sitl.toml \
 
 ```bash
 python visual_centering.py --config ../../config/llm_stack.pixhawk.toml \
-  --camera-yaw-deg 0 --camera-calibrated --hfov-deg 80 --vfov-deg 64 --plan-only
+  --camera-yaw-deg 0 --hfov-deg 80 --vfov-deg 64 --plan-only
 ```
 
-With the detector running, move a target around under the camera and check that the printed `body` direction matches where the target is relative to the nose. `--plan-only` never calls an action tool.
+With the detector running, move a target around under the camera and check that the printed `body` direction matches where the target is relative to the nose. `--plan-only` never calls an action tool, forces dry run on, refuses `--live`, and does not need `--camera-calibrated`, because this is how you measure the mount in the first place.
+
+`--max-step-m` can be set lower than 1.0 but not higher; `--confirm-frames` sets how many consecutive fresh centred frames count as success (default 3).
 
 ## Implemented and still needed
 
