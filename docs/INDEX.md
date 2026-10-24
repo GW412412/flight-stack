@@ -6,6 +6,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 
 ## Changelog
 
+- 2026-10-25: Added the "LLM behind the sticks" stack ([LLM-STACK.md](LLM-STACK.md)): MAVProxy hub, MAVLink MCP server with FlightGate, Ollama agent, Open WebUI via mcpo, data-flow monitor, SITL bring-up, systemd units and tests.
 - 2026-10-23: Created the decisions log, architecture diagram, telemetry bring-up doc, mavlink-router config and this index; corrected the stack report; added the supersede rule; README ground-station section updated; Kimi captures tracked.
 
 ## Master and current
@@ -16,6 +17,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 - [TELEMETRY-BRINGUP.md](TELEMETRY-BRINGUP.md): what to install, in what order, and what must be true before telemetry flows.
 - [../config/mavlink-router.conf](../config/mavlink-router.conf): router config that fans telemetry out to each endpoint with per-endpoint filters.
 - [../README.md](../README.md): project overview and ground-station tools.
+- [LLM-STACK.md](LLM-STACK.md): LLM behind the sticks - MAVProxy, MAVLink MCP server, Ollama, Open WebUI, monitor; diagram, ports, bring-up and safety notes.
 - [REFERENCES.md](REFERENCES.md): checked links to ArduPilot, MAVLink, QGroundControl and router sources.
 
 ## Research notes (26 Sep 2026, earlier than the decisions log)
@@ -43,7 +45,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 ## Configs and code
 
 - [../config/README.md](../config/README.md): notes on the example parameter files in `config/`.
-- [../drone_stack/README.md](../drone_stack/README.md): SITL launchers, middleware and the Ollama agent.
+- [../drone_stack/README.md](../drone_stack/README.md): SITL launchers, middleware, the MCP server and the Ollama agent.
 
 ## Kimi captures
 
