@@ -27,7 +27,7 @@ from drone_tools import DroneTools  # noqa: E402
 from fake_vehicle import FakeVehicle  # noqa: E402
 from map_route import check_home_matches  # noqa: E402
 from map_synth import base_cfg, build_scene, stack_config_path  # noqa: E402
-from map_to_route import main as cli_main, run  # noqa: E402
+from map_to_route import main as cli_main, route_config, run  # noqa: E402
 from mav_node import MavNode  # noqa: E402
 from mavlink_hub import MavlinkHub  # noqa: E402
 from safety_gate import FlightGate, _dist_m  # noqa: E402
@@ -120,6 +120,23 @@ def test_cli_matches_library(scene, tmp_path):
                      "--out", str(tmp_path / "o")]) == 0
     plan = json.loads((tmp_path / "o" / "mission_plan.json").read_text())
     assert plan["sorties"] and plan["no_sprayer_commands"] is True
+
+
+def test_example_settings_file_is_valid_and_runs(scene, tmp_path, monkeypatch):
+    import tomllib
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[3]
+    with open(root / "config" / "map_to_route.example.toml", "rb") as f:
+        cfg = tomllib.load(f)
+    route_config(cfg["route"])                                     # no unknown keys
+    assert cfg["limits"]["stack_config"].endswith("llm_stack.pixhawk.toml")
+    monkeypatch.chdir(root / "drone_stack" / "middleware")         # relative path as documented
+    cfg["map"].update(ortho=str(scene.paths["ortho"]), dsm=str(scene.paths["dsm"]),
+                      dtm=str(scene.paths["dtm"]))
+    cfg["tiles"] = {"size_px": 256, "overlap_px": 64}
+    cfg["detector"]["min_area_px"] = 8
+    r = run(cfg, home=scene.home_latlon, now=NOW)
+    assert r["sorties"] and r["stack_profile"]
 
 
 # ----------------------------------------------------------- pretend drone

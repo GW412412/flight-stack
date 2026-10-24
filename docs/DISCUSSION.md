@@ -100,7 +100,71 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 - `docs/VISUAL_CENTERING.md` (commit [a145861](https://github.com/GW412412/precision-drone-spraying/commit/a145861a77c4b02cab834a80495f8156bd421bb6)) was pushed directly to main, not through a pull request. Options: leave it there, or take it off main and put it through review. Its status line still says "No repository push or deployment is included", which is now out of date.
 - Input:
 
+### Map to route (from the 25 Oct 05:20 log entry)
+
+These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)). They are put to the whole group: anyone with a view, data or a measurement is welcome to add a line.
+
+**O-14: Survey camera and GPS: RTK-tagged photos or ground control points?**
+- Status: Open: input welcome.
+- Which camera and GPS will fly the mapping survey? ODM's map accuracy page puts a standard-GPS survey at 2 to 6 m horizontal error. On the current placeholder numbers that gives a search radius of about 6.7 m against a camera view of about 6 m each side at 6 m height, so the weed may start outside the picture. RTK-tagged photos or ground control points would close most of that gap.
+- Input:
+
+**O-15: The 60 m geofence is smaller than a 5-acre paddock**
+- Status: Open: input welcome.
+- A 60 m radius covers about 1.1 ha around home; 5 acres is about 2 ha. Options: raise the limit, or fly each paddock from several home points (the planner already plans from whatever home it is given).
+- Input:
+
+**O-16: How old can a map get before it is re-flown?**
+- Status: Open: input welcome.
+- The planner warns after 14 days (placeholder). Weeds grow, stock moves, and new obstacles appear after the survey.
+- Input:
+
+**O-17: One model for the map and the live camera, or two?**
+- Status: Open: input welcome.
+- The orthomosaic is a top-down, stitched, fixed-resolution picture; the live OpenIPC camera is a single, compressed, moving view at a different height. One shared model is simpler; two may each do better.
+- Input:
+
+**O-18: Channel order and height scaling for the 4-channel model**
+- Status: Open: input welcome.
+- Which channel order (for example BGR plus height) and which height scaling (placeholder: 2.0 m maps to 255) should the 4-channel model be trained with? Whatever is chosen, the adapter's `input_order` and `chm_full_scale_m` must match the training images exactly.
+- Input:
+
+**O-19: Is the AGPL licence a problem for the repo?**
+- Status: Open: input welcome.
+- Ultralytics is AGPL-3.0; this repo is MIT. The adapter imports it only when used. Fallback: RF-DETR segmentation (Apache 2.0 for its Apache-designated models; some "Plus" models use a different licence).
+- Input:
+
+**O-20: One uploaded mission per sortie, or target to target with the safety check on each move?**
+- Status: Open: input welcome.
+- The planner writes one `upload_mission` per sortie. The alternative is flying target to target in GUIDED, checked by the safety gate on every move, which fits the centering loop more naturally.
+- Input:
+
+**O-21: Should `upload_mission` refuse when the drone's home doesn't match the planned home?**
+- Status: Open: input welcome.
+- Every height in a plan is relative to the planned home. `check_home_matches` reports a difference over 3 m, but nothing enforces it yet.
+- Input:
+
+**O-22: Real camera angle, battery time, climb rate and descent rate**
+- Status: Open: input welcome.
+- All placeholders today: 90° camera field of view, 600 s usable battery, 1.0 m/s climb, 0.75 m/s descent, 20 s per target, 6 m approach height, 1.5 m drone GPS error. Measurements from the actual airframe are needed before plans mean much.
+- Input:
+
+**O-23: Which zones are no-fly?**
+- Status: Open: input welcome.
+- For example the neighbour's house, roads, dams and stock yards. The planner reads no-fly and spray-zone polygons from GeoJSON files and never routes a leg through a no-fly zone.
+- Input:
+
 ## Log
+
+### 2026-10-25 05:20 · Maya (AI agent, Sesame) · Map-to-route prototype in a draft PR
+
+- **What:** a pipeline from an OpenDroneMap survey (orthomosaic, DSM, DTM) to weed targets to waypoint sorties that bring the drone above each target for the visual centering loop. Design and gaps in [MAP-TO-ROUTE.md](MAP-TO-ROUTE.md); example settings in `config/map_to_route.example.toml`.
+- **Classifier pick:** Ultralytics YOLO-seg on orthomosaic tiles, plain colour first, then a 4-channel version with height above ground. RF-DETR segmentation as the Apache-licensed fallback if AGPL is a problem.
+- **Safety:** heights are terrain-relative from the DTM; targets that would need more than 20 m are excluded, not pushed down. Limits come from the stack config, every sortie is pre-checked by the real safety gate, and the plan has no sprayer commands. It never connects to a drone.
+- **Biggest gap:** without GCPs or RTK, map error may put the weed outside the camera's view on arrival (O-14).
+- **Tests:** 107 pass in one run: the existing 54 plus 53 new (46 for map reading, detection and routing, 7 for the end-to-end pipeline, the example settings and the pretend-drone upload). Synthetic data and the pretend drone only; not run on a real survey, in SITL or in the air.
+- **Links:** branch `prototype/map-to-route`, stacked on PR #4.
+- **Raised:** O-14 to O-23.
 
 ### 2026-10-25 04:51 · Maya (AI agent, Sesame) · Discussion log and protocol proposed
 

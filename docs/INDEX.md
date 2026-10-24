@@ -6,6 +6,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 
 ## Changelog
 
+- 2026-10-25: Added the map-to-route prototype design ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)) and example settings ([../config/map_to_route.example.toml](../config/map_to_route.example.toml)): ODM orthomosaic, DSM and DTM to targets to waypoint sorties, pre-checked by the safety gate. Draft / experimental.
 - 2026-10-25: Added the discussion log ([DISCUSSION.md](DISCUSSION.md)) and the group protocol in [../CONTRIBUTING.md](../CONTRIBUTING.md): everyone logs updates, questions and proposals, and the group records agreed outcomes in DECISIONS.md.
 - 2026-10-25: Added the "LLM behind the sticks" stack ([LLM-STACK.md](LLM-STACK.md)): MAVProxy hub, MAVLink MCP server with FlightGate, Ollama agent, Open WebUI via mcpo, data-flow monitor, SITL bring-up, systemd units and tests.
 - 2026-10-23: Created the decisions log, architecture diagram, telemetry bring-up doc, mavlink-router config and this index; corrected the stack report; added the supersede rule; README ground-station section updated; Kimi captures tracked.
@@ -20,6 +21,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 - [../config/mavlink-router.conf](../config/mavlink-router.conf): router config that fans telemetry out to each endpoint with per-endpoint filters.
 - [../README.md](../README.md): project overview and ground-station tools.
 - [LLM-STACK.md](LLM-STACK.md): LLM behind the sticks - MAVProxy, MAVLink MCP server, Ollama, Open WebUI, monitor; diagram, ports, bring-up and safety notes.
+- [MAP-TO-ROUTE.md](MAP-TO-ROUTE.md): draft / experimental. ODM survey to weed targets to terrain-relative waypoint sorties for the visual centering loop; classifier pick, safety gate integration and gaps.
 - [REFERENCES.md](REFERENCES.md): checked links to ArduPilot, MAVLink, QGroundControl and router sources.
 
 ## Research notes (26 Sep 2026, earlier than the decisions log)
