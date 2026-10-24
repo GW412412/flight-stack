@@ -49,24 +49,49 @@ How
 What it does NOT do (see docs/MAP-TO-ROUTE.md "Gaps"): route AROUND no-fly
 zones (it only refuses legs that cross them), model wind, know the real
 battery, or know whether the map is still current.
+
+Not a flyable mission yet
+-------------------------
+The waypoints are plain NAV_WAYPOINTs with NO hold, so in AUTO the drone
+would fly straight past each target. The plan is for an operator to review
+and upload; the hand-off to the visual centering loop at each target is not
+wired yet (DISCUSSION.md O-20). Every altitude is relative to the home the
+planner ASSUMED: the operator must run check_home_matches() with the
+vehicle's real home before uploading, because nothing enforces it (O-21).
+
+Where the code lives
+--------------------
+  map_route.py            this file: settings, targets -> planned targets
+                          (steps 1-2), the plan (steps 5-6), waypoints
+  map_route_obstacles.py  legs: clearance over the DSM, no-fly, time (3-4)
+  map_route_order.py      visiting order: nearest neighbour + 2-opt (5)
+  map_route_sorties.py    cutting the order into sorties (5)
+  geo_distance.py         public distance helper (no private gate import)
 """
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
-from shapely.geometry import LineString, Point
+from shapely.geometry import Point
 import numpy as np
 import shapely
 
+from geo_distance import distance_m
 from map_georef import Target
 from map_rasters import MapError
+from map_route_obstacles import BIG, Leg, LegChecker, ceil_half_m
+from map_route_order import nearest_neighbour as _nearest_neighbour
+from map_route_order import tour_cost as _tour_cost
+from map_route_order import two_opt as _two_opt
+from map_route_sorties import split_into_sorties, tidy_sortie
 from safety_gate import FlightGate
 from spray_mission import CONF_MIN, TANK_LITRES_DEFAULT, dose_ml
 
-BIG = 1e9            # "infeasible" leg cost; finite so 2-opt arithmetic stays sane
+__all__ = ["BIG", "Leg", "Plan", "PlannedTarget", "RouteConfig", "RoutePlanner", "Sortie",
+           "check_home_matches"]
 
 
 @dataclass
@@ -118,14 +143,6 @@ class PlannedTarget:
 
 
 @dataclass
-class Leg:
-    cost_s: float
-    transit_alt_m: Optional[float]   # None = straight leg is clear
-    feasible: bool
-    why: str = ""
-
-
-@dataclass
 class Sortie:
     waypoints: List[dict]            # upload_mission format
     items: List[dict]                # metadata per waypoint (same order)
@@ -165,13 +182,21 @@ class Plan:
 
 
 def check_home_matches(plan_home: dict, actual_home: dict, tol_m: float = 3.0) -> List[str]:
-    """Every altitude in a plan is relative to the home the planner ASSUMED.
-    If the drone arms somewhere else, every height is wrong by the ground
-    difference. Call this with the vehicle's real home before uploading."""
+    """Compare the planned home with the vehicle's real home. ONLY WARNS.
+
+    Every altitude in a plan is relative to the home the planner ASSUMED. If
+    the drone arms somewhere else, every height is wrong by the ground
+    difference between the two homes.
+
+    This returns a list of warnings (empty = homes match within tol_m). It
+    does not block anything: upload_mission and the safety gate do NOT call
+    it. A drone 20 to 40 m off would still pass the geofence and upload with
+    every height wrong. The operator must run it with the vehicle's real home
+    before every upload and re-plan if it warns. Making the gate enforce it
+    is open item O-21 and needs the owner's OK."""
     if actual_home is None:
         return ["vehicle home unknown"]
-    from safety_gate import _dist_m
-    d = _dist_m(plan_home["lat"], plan_home["lon"], actual_home["lat"], actual_home["lon"])
+    d = distance_m(plan_home["lat"], plan_home["lon"], actual_home["lat"], actual_home["lon"])
     return [] if d <= tol_m else [f"vehicle home is {d:.1f} m from the planned home "
                                   f"(> {tol_m} m): re-plan from the real home"]
 
@@ -209,19 +234,19 @@ class RoutePlanner:
         if self.cfg.rtl_alt_m > self.s.max_alt_m:
             self.warnings.append(f"rtl_alt_m {self.cfg.rtl_alt_m} > max_alt_m {self.s.max_alt_m}: "
                                  "RTL will climb above the LLM ceiling")
-        self._leg_cache: Dict[tuple, Leg] = {}
+        # Legs (clearance, no-fly, time) are worked out in map_route_obstacles.
+        self.legs = LegChecker(odm_map, self.home_ground, (self.hx, self.hy), self.no_fly,
+                               self.cfg, self.s.max_alt_m)
 
     # =====================================================================
     # Heights
     # =====================================================================
     def _surface_rel(self, x: float, y: float, half: float) -> Optional[float]:
         """Tallest surface (DSM, else DTM) near (x, y), relative to home ground."""
-        src = self.m.dsm or self.m.dtm
-        z = src.max_in_box(x, y, half)
-        return None if z is None else z - self.home_ground
+        return self.legs.surface_rel(x, y, half)
 
     def _ceil(self, a: float) -> float:
-        return math.ceil(a * 2.0) / 2.0          # 0.5 m steps, always up
+        return ceil_half_m(a)                    # 0.5 m steps, always up
 
     # =====================================================================
     # Step 1-2: targets -> planned targets / excluded
@@ -235,6 +260,8 @@ class RoutePlanner:
             excluded.append({"target_id": t.target_id, "lat": t.lat, "lon": t.lon, "reason": why})
 
         for t in targets:
+            # Step 2 filters first, cheapest first. Each dropped target gets a
+            # reason in `excluded`, so the operator can see why.
             if t.confidence < c.conf_min:
                 drop(t, f"confidence {t.confidence:.2f} < {c.conf_min}")
                 continue
@@ -258,17 +285,24 @@ class RoutePlanner:
                 drop(t, f"{d_home:.0f} m from home > geofence {s.geofence_radius_m:.0f} m "
                         f"minus {c.geofence_margin_m:.0f} m margin")
                 continue
+            # Step 1: heights. g = ground at the target minus ground at home,
+            # both from the same DTM, so the map's unknown height datum cancels.
             g = self.m.ground_rel(t.x, t.y, self.home_ground)
             if g is None:
                 drop(t, "no DTM height at target")
                 continue
+            # The tallest thing near the target (shrub, tree) from the DSM.
             obst = self._surface_rel(t.x, t.y, c.target_clearance_radius_m)
             obst = g if obst is None else max(obst, g)
+            # Approach height: the camera height we want over the ground, or
+            # clearance over the nearby obstacle, whichever is higher.
             alt = max(g + c.approach_agl_m, obst + c.obstacle_clearance_m)
             if alt < s.min_goto_alt_m:
                 alt = s.min_goto_alt_m          # raising is safe; lowering never is
             alt = self._ceil(alt)
             agl = alt - g
+            # Too high for the gate, or too high for the camera to see a
+            # rosette: drop it with a reason. Never push it down instead.
             if alt > s.max_alt_m:
                 drop(t, f"approach alt {alt:.1f} m (ground {g:+.1f} m vs home) > max_alt_m "
                         f"{s.max_alt_m}")
@@ -281,53 +315,11 @@ class RoutePlanner:
         return planned, excluded
 
     # =====================================================================
-    # Step 3-4: legs
+    # Step 3-4: legs (see map_route_obstacles.py)
     # =====================================================================
-    def _crosses_no_fly(self, a, b) -> bool:
-        if not self.no_fly:
-            return False
-        ln = LineString([a, b]) if a != b else Point(a)
-        return any(z.intersects(ln) for z in self.no_fly)
-
     def leg(self, a: Tuple[float, float, float], b: Tuple[float, float, float]) -> Leg:
         """Fly from a=(x, y, alt) to b. Cached."""
-        key = (round(a[0], 3), round(a[1], 3), a[2], round(b[0], 3), round(b[1], 3), b[2])
-        if key in self._leg_cache:
-            return self._leg_cache[key]
-        c = self.cfg
-        (ax, ay, aa), (bx, by, ba) = a, b
-        d = math.hypot(bx - ax, by - ay)
-        if self._crosses_no_fly((ax, ay), (bx, by)):
-            res = Leg(BIG, None, False, "crosses no-fly zone")
-            self._leg_cache[key] = res
-            return res
-        n = max(2, int(math.ceil(d / c.leg_sample_step_m)) + 1)
-        need = -1e9
-        clear = True
-        for i in range(n):
-            f = i / (n - 1)
-            px, py = ax + f * (bx - ax), ay + f * (by - ay)
-            surf = self._surface_rel(px, py, c.leg_corridor_half_width_m)
-            if surf is None:
-                res = Leg(BIG, None, False, "leg crosses ground with no elevation data")
-                self._leg_cache[key] = res
-                return res
-            req = surf + c.obstacle_clearance_m
-            need = max(need, req)
-            if aa + f * (ba - aa) < req - 1e-6:
-                clear = False
-        if clear:
-            cost = d / c.cruise_ms + max(0.0, ba - aa) / c.climb_ms + max(0.0, aa - ba) / c.descend_ms
-            res = Leg(cost, None, True)
-        else:
-            t_alt = self._ceil(max(need, aa, ba))
-            if t_alt > self.s.max_alt_m:
-                res = Leg(BIG, t_alt, False, f"needs transit {t_alt:.1f} m > max_alt_m")
-            else:
-                cost = (t_alt - aa) / c.climb_ms + d / c.cruise_ms + (t_alt - ba) / c.descend_ms
-                res = Leg(cost, t_alt, True)
-        self._leg_cache[key] = res
-        return res
+        return self.legs.leg(a, b)
 
     def _home_start(self):
         return (self.hx, self.hy, self.cfg.takeoff_alt_m)
@@ -336,22 +328,8 @@ class RoutePlanner:
         return (p.target.x, p.target.y, p.alt_m)
 
     def return_leg(self, p: PlannedTarget) -> Leg:
-        """RTL from a target: ArduPilot climbs to RTL_ALT if lower, flies
-        straight home at that height, then lands. We check that straight line
-        against the DSM; if it is not clear, a transit waypoint above the last
-        target lifts the start of RTL high enough (RTL keeps the current
-        height when it is already above RTL_ALT)."""
-        c = self.cfg
-        start = max(p.alt_m, c.rtl_alt_m)
-        flat = self.leg((p.target.x, p.target.y, start), (self.hx, self.hy, start))
-        if not flat.feasible:
-            return flat
-        top = flat.transit_alt_m or start
-        d = math.hypot(p.target.x - self.hx, p.target.y - self.hy)
-        cost = (top - p.alt_m) / c.climb_ms + d / c.cruise_ms + top / c.descend_ms
-        # transit_alt_m is set only when RTL's own climb to rtl_alt_m is not
-        # enough and we must add a climb-in-place waypoint before RTL.
-        return Leg(cost, flat.transit_alt_m, True)
+        """RTL from a target (see LegChecker.return_leg)."""
+        return self.legs.return_leg(p.target.x, p.target.y, p.alt_m)
 
     # =====================================================================
     # Step 5: ordering and sorties
@@ -372,42 +350,17 @@ class RoutePlanner:
                     C[i][j] = (lg.cost_s + self.cfg.dwell_s) if lg.feasible else BIG
         return C
 
+    # Ordering lives in map_route_order.py; these keep the old method names.
     @staticmethod
     def tour_cost(C, order: List[int]) -> float:
-        if not order:
-            return 0.0
-        cost = C[0][order[0]] + C[order[-1]][0]
-        for a, b in zip(order, order[1:]):
-            cost += C[a][b]
-        return cost
+        return _tour_cost(C, order)
 
     @staticmethod
     def nearest_neighbour(C, nodes: List[int]) -> List[int]:
-        left, order, cur = list(nodes), [], 0
-        while left:
-            nxt = min(left, key=lambda j: (C[cur][j], j))   # ties -> lowest index: deterministic
-            order.append(nxt)
-            left.remove(nxt)
-            cur = nxt
-        return order
+        return _nearest_neighbour(C, nodes)
 
     def two_opt(self, C, order: List[int]) -> List[int]:
-        """Classic 2-opt, but scoring the WHOLE tour each time because costs
-        are asymmetric (reversing a segment changes uphill into downhill).
-        O(n^3) per pass: fine for the ~25 weeds per paddock in LIVE-PIPELINE."""
-        best = list(order)
-        best_cost = self.tour_cost(C, best)
-        for _ in range(self.cfg.two_opt_max_passes):
-            improved = False
-            for i in range(len(best) - 1):
-                for j in range(i + 1, len(best)):
-                    cand = best[:i] + best[i:j + 1][::-1] + best[j + 1:]
-                    cc = self.tour_cost(C, cand)
-                    if cc < best_cost - 1e-9:
-                        best, best_cost, improved = cand, cc, True
-            if not improved:
-                break
-        return best
+        return _two_opt(C, order, self.cfg.two_opt_max_passes)
 
     def _items_for(self, pts, order: List[int]) -> int:
         """Waypoint count the sortie would upload (targets + transit points)."""
@@ -427,10 +380,14 @@ class RoutePlanner:
 
     def plan(self, targets: Sequence[Target], now: Optional[datetime] = None) -> Plan:
         c, s = self.cfg, self.s
+        # Steps 1-2: heights and filters, per target.
         pts, excluded = self.prepare(targets)
         self._map_age_warning(targets, now)
+        # The two budgets every sortie must fit: battery time after the
+        # reserve, and the tank after its reserve.
         budget = c.battery_usable_s * (1.0 - c.battery_reserve_frac)
         tank_ml = c.tank_litres * 1000.0 - c.tank_reserve_ml
+        # Steps 3-4: price every leg once (home <-> target, target <-> target).
         C = self._matrix(pts)
 
         # Targets we cannot even do alone (out and straight back) are dropped.
@@ -449,38 +406,28 @@ class RoutePlanner:
             else:
                 doable.append(k)
 
-        # Route first ...
+        # Step 5a, route first: one tour through every doable target.
         order = self.two_opt(C, self.nearest_neighbour(C, doable)) if doable else []
-        # ... cluster second.
-        groups, cur, t_acc, dose_acc = [], [], 0.0, 0.0
-        for k in order:
-            p = pts[k - 1]
-            step = C[cur[-1]][k] if cur else C[0][k]
-            fits = (cur and step < BIG
-                    and t_acc + step + C[k][0] <= budget
-                    and dose_acc + p.dose_ml <= tank_ml
-                    and self._items_for(pts, cur + [k]) <= s.max_mission_items)
-            if cur and not fits:
-                groups.append(cur)
-                cur, t_acc, dose_acc = [], 0.0, 0.0
-                step = C[0][k]
-            cur.append(k)
-            t_acc += step
-            dose_acc += p.dose_ml
-        if cur:
-            groups.append(cur)
+        # Step 5b, cluster second: cut that tour into sorties that fit the
+        # battery, the tank and the mission item limit (map_route_sorties).
+        def items_for(nodes):
+            return self._items_for(pts, nodes)
+        groups = split_into_sorties(order, C, lambda k: pts[k - 1].dose_ml, items_for,
+                                    budget, tank_ml, s.max_mission_items, BIG)
 
+        # Step 6: tidy each sortie's order, then turn it into waypoints and
+        # pre-check it with the real FlightGate.
         sorties = []
         for g in groups:
-            g2 = self.two_opt(C, g)
-            if (self.tour_cost(C, g2) > budget or
-                    self._items_for(pts, g2) > s.max_mission_items):
-                g2 = g
+            g2 = tidy_sortie(C, g, items_for, budget, s.max_mission_items,
+                             c.two_opt_max_passes)
             sorties.append(self._build_sortie(pts, g2, C))
         return Plan(
             home={"lat": self.home_lat, "lon": self.home_lon,
                   "ground_elev_m": round(self.home_ground, 3),
-                  "note": "all alt_m are relative to THIS point; check_home_matches() before upload"},
+                  "note": "all alt_m are relative to THIS point. OPERATOR STEP: run "
+                          "check_home_matches() with the vehicle's real home before upload; "
+                          "it only warns and nothing else enforces it"},
             limits={"max_alt_m": s.max_alt_m, "min_goto_alt_m": s.min_goto_alt_m,
                     "geofence_radius_m": s.geofence_radius_m, "max_speed_ms": s.max_speed_ms,
                     "max_mission_items": s.max_mission_items},
@@ -533,23 +480,33 @@ class RoutePlanner:
         return h
 
     def _build_sortie(self, pts, order: List[int], C) -> Sortie:
+        """One sortie's waypoints, in upload_mission's format, plus metadata.
+
+        Plain waypoints only: no hold at the target and no sprayer command.
+        The hand-off to the centering loop is recorded in the metadata but is
+        not wired to anything yet (O-20)."""
         wps, meta, prev = [], [], self._home_start()
         for k in order:
             p = pts[k - 1]
             nd = self._node(p)
             lg = self.leg(prev, nd)
+            # If the leg is blocked by an obstacle: climb in place, cross at
+            # the transit height, then come down over the target.
             if lg.transit_alt_m is not None:
                 wps.append(self._wp(prev[0], prev[1], lg.transit_alt_m))
                 meta.append({"kind": "transit_climb", "why": "clear obstacle on next leg"})
                 if lg.transit_alt_m != nd[2]:
                     wps.append(self._wp(nd[0], nd[1], lg.transit_alt_m))
                     meta.append({"kind": "transit_over_target"})
+            # The target waypoint itself, with what the centering loop needs.
             wps.append(self._wp(*nd))
             meta.append({"kind": "target", "target_id": p.target.target_id,
                          "dose_ml": round(p.dose_ml, 3), "confidence": p.target.confidence,
                          "ground_rel_home_m": p.ground_rel_m, "agl_m": p.agl_m,
                          "handoff": self.handoff(p)})
             prev = nd
+        # After the last target, RTL. Add a climb first if RTL's straight line
+        # home would not clear the obstacles.
         rl = self.return_leg(pts[order[-1] - 1])
         ret_alt = None
         if rl.transit_alt_m is not None:
@@ -559,6 +516,8 @@ class RoutePlanner:
         lats = [w["lat"] for w in wps]
         lons = [w["lon"] for w in wps]
         bounds = (min(lats) - 1e-4, min(lons) - 1e-4, max(lats) + 1e-4, max(lons) + 1e-4)
+        # Pre-check with the REAL gate and the same limits. The gate checks
+        # again at upload; this only catches a bad plan early.
         verdict = FlightGate(self.s).check_mission(wps, {"lat": self.home_lat, "lon": self.home_lon})
         return Sortie(
             waypoints=wps, items=meta, target_ids=[pts[k - 1].target.target_id for k in order],

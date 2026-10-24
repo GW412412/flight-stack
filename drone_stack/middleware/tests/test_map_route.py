@@ -19,7 +19,8 @@ from map_georef import Target, detect_on_map, georeference  # noqa: E402
 from map_rasters import MapError, OdmMap, OdmPaths  # noqa: E402
 from map_route import RouteConfig, RoutePlanner, check_home_matches  # noqa: E402
 from map_synth import build_scene, stack_config_path  # noqa: E402
-from safety_gate import FlightGate, _dist_m  # noqa: E402
+from geo_distance import distance_m  # noqa: E402
+from safety_gate import FlightGate  # noqa: E402
 from stack_config import load_config  # noqa: E402
 
 NOW = datetime(2026, 10, 25, 5, 0)
@@ -103,7 +104,7 @@ def test_every_sortie_passes_the_real_safety_gate(om, scene, safety, targets):
         assert v.allowed, v.reasons
         for wp in s.waypoints:
             assert safety.min_goto_alt_m <= wp["alt_m"] <= safety.max_alt_m
-            assert _dist_m(home["lat"], home["lon"], wp["lat"], wp["lon"]) <= safety.geofence_radius_m
+            assert distance_m(home["lat"], home["lon"], wp["lat"], wp["lon"]) <= safety.geofence_radius_m
         assert set(s.upload_mission_args()) == {"waypoints", "rtl_at_end"}
         assert all(set(w) == {"lat", "lon", "alt_m"} for w in s.waypoints)
 
@@ -328,3 +329,62 @@ def test_handoff_search_radius_vs_camera_footprint(om, scene, safety):
     t2.georef_sigma_m = 0.1
     h2 = target_items(rtk.plan([t2], now=NOW).sorties[0])[0]["handoff"]
     assert h2["target_probably_in_view"] is True
+
+
+# ------------------------------------------- split modules (review of PR #5)
+def test_public_distance_helper_agrees_with_the_gate():
+    """geo_distance.distance_m replaces the planner's import of the private
+    safety_gate._dist_m. The two must give the same answer, or planner and
+    gate would disagree about the geofence. (This test is the only place the
+    private helper is still referenced.)"""
+    import safety_gate
+    pts = [(-35.363261, 149.165230, -35.363261, 149.165230),
+           (-35.363261, 149.165230, -35.362261, 149.165230),
+           (-35.363261, 149.165230, -35.363261, 149.166230),
+           (51.5, -0.12, 48.85, 2.35),
+           (0.0, 179.9, 0.0, -179.9)]
+    for p in pts:
+        assert abs(distance_m(*p) - safety_gate._dist_m(*p)) < 1e-6
+
+
+def test_order_module_is_asymmetric_and_deterministic():
+    from map_route_order import nearest_neighbour, tour_cost, two_opt
+    # Climbing 0->1 costs 10, descending 1->0 costs 4.
+    C = [[0, 10, 6], [4, 0, 3], [6, 9, 0]]
+    assert tour_cost(C, [1, 2]) == 10 + 3 + 6
+    assert tour_cost(C, [2, 1]) == 6 + 9 + 4
+    assert nearest_neighbour(C, [1, 2]) == [2, 1]
+    assert nearest_neighbour(C, [1, 2]) == nearest_neighbour(C, [2, 1])
+    best = two_opt(C, [1, 2])
+    assert tour_cost(C, best) == min(tour_cost(C, [1, 2]), tour_cost(C, [2, 1]))
+    assert tour_cost(C, []) == 0.0
+
+
+def test_sortie_split_respects_tank_and_items():
+    from map_route_sorties import split_into_sorties, tidy_sortie
+    n = 6
+    C = [[0 if i == j else 1.0 for j in range(n + 1)] for i in range(n + 1)]
+    order = list(range(1, n + 1))
+    # Tank holds two doses of 10 ml.
+    g = split_into_sorties(order, C, lambda k: 10.0, lambda nodes: len(nodes), 1e6, 20.0, 99, 1e9)
+    assert g == [[1, 2], [3, 4], [5, 6]]
+    # Item limit of three.
+    g = split_into_sorties(order, C, lambda k: 1.0, lambda nodes: len(nodes), 1e6, 1e6, 3, 1e9)
+    assert g == [[1, 2, 3], [4, 5, 6]]
+    # Battery: each hop 1 s + 1 s home; budget 3 s fits two targets.
+    g = split_into_sorties(order, C, lambda k: 1.0, lambda nodes: len(nodes), 3.0, 1e6, 99, 1e9)
+    assert g == [[1, 2], [3, 4], [5, 6]]
+    # tidy_sortie keeps the original when the re-ordered one would not fit.
+    assert tidy_sortie(C, [1, 2], lambda nodes: len(nodes), 3.0, 1) == [1, 2]
+
+
+def test_check_home_matches_only_warns():
+    """It returns warnings; it never raises and never blocks anything."""
+    home = {"lat": -35.363261, "lon": 149.165230}
+    assert check_home_matches(home, dict(home)) == []
+    near = {"lat": -35.363261 + 0.00002, "lon": 149.165230}       # ~2 m
+    assert check_home_matches(home, near) == []
+    off = {"lat": -35.363261 + 0.0002, "lon": 149.165230}         # ~22 m
+    w = check_home_matches(home, off)
+    assert len(w) == 1 and "re-plan" in w[0]
+    assert check_home_matches(home, None) == ["vehicle home unknown"]
