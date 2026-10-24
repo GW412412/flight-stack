@@ -110,12 +110,23 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--config", required=True)
     ap.add_argument("--project", help="ODM project dir (overrides [map] paths)")
-    ap.add_argument("--home", help="lat,lon of the take-off point; write --home=-35.36,149.17 (with =) because a negative latitude otherwise reads as an option")
+    ap.add_argument("--home", help="lat,lon of the take-off point; write --home=-35.36,149.17 (with =) because a negative latitude otherwise reads as an option. Or use --home-lat/--home-lon.")
+    ap.add_argument("--home-lat", type=float, help="take-off latitude; a negative value needs no '=' (--home-lat -35.36)")
+    ap.add_argument("--home-lon", type=float, help="take-off longitude")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
+    # Home can come from --home lat,lon or from the --home-lat/--home-lon pair
+    # (never both); with neither, the config file's [home] is used.
+    if a.home and (a.home_lat is not None or a.home_lon is not None):
+        ap.error("give --home or --home-lat/--home-lon, not both")
+    if (a.home_lat is None) != (a.home_lon is None):
+        ap.error("--home-lat and --home-lon go together")
     with open(a.config, "rb") as f:
         cfg = tomllib.load(f)
-    home = tuple(float(v) for v in a.home.split(",")) if a.home else None
+    if a.home_lat is not None:
+        home = (a.home_lat, a.home_lon)
+    else:
+        home = tuple(float(v) for v in a.home.split(",")) if a.home else None
     r = run(cfg, a.project, home, a.out)
     print(f"{r['target_count']} targets, {len(r['sorties'])} sorties, "
           f"{len(r['excluded'])} excluded, {len(r['warnings'])} warnings -> {a.out}")

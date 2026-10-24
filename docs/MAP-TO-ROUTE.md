@@ -4,7 +4,7 @@
 
 This prototype takes the outputs of an OpenDroneMap (ODM) survey of a paddock, finds candidate weeds on the orthomosaic, places each one in latitude, longitude and ground height, and plans waypoint sorties that bring the drone to a hover above each target, where the visual centering loop ([VISUAL_CENTERING.md](VISUAL_CENTERING.md), PR #1) takes over. It produces files only: it never connects to a drone, never uploads, never arms, and never emits a sprayer command.
 
-The bottom line: the pipeline works end to end on synthetic data and every sortie it writes passes the real flight safety check and uploads cleanly to the pretend drone. The biggest real-world gap is map accuracy. A survey flown without ground control points or RTK can put a weed several metres from where it really is, which on current placeholder numbers may be outside the live camera's view when the drone arrives.
+The bottom line: the pipeline works end to end on synthetic data and every sortie it writes passes the real flight safety check and uploads cleanly to the pretend drone. It is a plan for an operator to review and upload, not a flyable mission yet: the waypoints have no hold at the targets, so in AUTO the drone would fly straight past them, and the hand-off to the visual centering loop is not wired (O-20). The biggest real-world gap is map accuracy. A survey flown without ground control points or RTK can put a weed several metres from where it really is, which on current placeholder numbers may be outside the live camera's view when the drone arrives.
 
 ## Where it fits
 
@@ -25,7 +25,11 @@ All in `drone_stack/middleware/`:
 | `map_tiles.py` | Cuts the orthomosaic into overlapping tiles; each weed belongs to exactly one tile |
 | `map_detect.py` | Swappable detectors: colour stand-in, YOLO-seg adapter |
 | `map_georef.py` | Detections to targets with position, heights and area; GeoJSON output |
-| `map_route.py` | Terrain-relative heights, ordering, sorties, obstacles, zones, safety pre-check, hand-off |
+| `map_route.py` | Settings, terrain-relative heights and filters, the plan, waypoints, safety pre-check, hand-off metadata, `check_home_matches` |
+| `map_route_obstacles.py` | Legs: clearance over the DSM, climb-over heights, no-fly zones, RTL leg, flying time |
+| `map_route_order.py` | Visiting order: nearest neighbour, then 2-opt with asymmetric (uphill/downhill) costs |
+| `map_route_sorties.py` | Cutting the order into sorties by battery, tank and mission item limit |
+| `geo_distance.py` | Public `distance_m` helper, the same formula as the safety gate, so planning code does not import the gate's private `_dist_m` (`safety_gate.py` is untouched) |
 | `map_to_route.py` | Command line and library entry point |
 
 Example settings: [../config/map_to_route.example.toml](../config/map_to_route.example.toml). Tests: `tests/test_map_inputs.py`, `tests/test_map_route.py`, `tests/test_map_pipeline_e2e.py`, with the synthetic paddock in `tests/map_synth.py`. New dependencies: `rasterio`, `pyproj` (in `requirements.txt`); `shapely` was already used.
@@ -37,7 +41,13 @@ python map_to_route.py --config ../../config/map_to_route.example.toml \
     --project /path/to/odm/project --home=-35.363261,149.165230 --out plan/
 ```
 
-Write `--home` with `=`: a negative latitude otherwise reads as an option.
+Write `--home` with `=`: a negative latitude otherwise reads as an option. Or give the two parts separately, which needs no `=`: `--home-lat -35.363261 --home-lon 149.165230`. The coordinates in this doc and the example settings are a dummy location (ArduPilot's default SITL home at CMAC, Canberra), not a real paddock.
+
+## Operator steps before any upload
+
+1. Review `mission_plan.json`: the sorties, the excluded targets and their reasons, and every warning.
+2. **Run `check_home_matches(plan["home"], vehicle_home)` with the vehicle's real home, and re-plan if it warns.** Every altitude is relative to the planned home. `check_home_matches` only warns: neither `upload_mission` nor the safety gate calls it, so nothing else will catch a drone armed 20 to 40 m from the planned home; the upload would go through with every height wrong by the ground difference. Whether the gate should refuse in that case is O-21 and needs the owner's explicit OK.
+3. Upload each sortie through the normal `upload_mission` tool (safety gate, confirmation code, pilot override rules).
 
 ## ODM outputs used, and why
 
@@ -82,7 +92,7 @@ with both ground heights from the same DTM. Taking a difference within one map c
 - A target whose approach would exceed the gate's 20 m ceiling is **excluded with a reason**, never pushed down towards the ground.
 - A target downhill of home is raised to the gate's minimum height if that still leaves a usable camera height, otherwise excluded.
 - Legs are sampled along a corridor against the DSM. Where a tree or shed is in the way, the planner adds climb-over waypoints, including before return to home if the Pixhawk's RTL height would not clear an obstacle.
-- If the drone's real home differs from the planned home by more than 3 m, every height is wrong by the ground difference. `check_home_matches` reports this; whether `upload_mission` should refuse in that case is O-21.
+- If the drone's real home differs from the planned home by more than 3 m, every height is wrong by the ground difference. `check_home_matches` reports this as a warning only; it blocks nothing, so running it before upload is an operator step (above). Whether `upload_mission` should refuse in that case is O-21.
 
 ## Route ordering and sorties
 
@@ -98,7 +108,7 @@ For every target, each sortie records what the centering loop needs on arrival: 
 
 > search radius = 2 × √(map error² + drone GPS error²)
 
-With a camera field of view set, it also records the camera's half footprint at the approach height and whether the target is probably in view. A future step is to have the centering loop read this directly; today it is metadata in `mission_plan.json`.
+With a camera field of view set, it also records the camera's half footprint at the approach height and whether the target is probably in view. **This hand-off is not wired yet:** today it is metadata in `mission_plan.json`, and nothing reads it. The waypoints are plain `NAV_WAYPOINT`s with no hold, so a mission flown in AUTO would pass over each target without stopping for the centering loop. How the two connect, one uploaded mission with holds or target-by-target flight in GUIDED, is O-20.
 
 ## Safety gate integration
 
@@ -106,7 +116,7 @@ With a camera field of view set, it also records the camera's half footprint at 
 - Every sortie is pre-checked with the real `FlightGate.check_mission` before it is written, and the result is stored with the sortie.
 - Output waypoints are in the exact `upload_mission` format (`lat`, `lon`, `alt_m`, return home at the end). Uploading still goes through the normal tool: safety gate, confirmation code, pilot override rules.
 - No sprayer commands. The plan says so (`no_sprayer_commands: true`) and the tests check both the plan and the mission read back from the pretend drone.
-- The pretend-drone test uploads every planned sortie through `DroneTools → FlightGate → MavlinkHub → FakeVehicle` with the real Pixhawk envelope and compares the downloaded mission item by item. A second test puts the drone's home about 110 m from the planned home: `check_home_matches` flags it and the gate refuses the upload because the waypoints fall outside its 60 m geofence.
+- The pretend-drone test uploads every planned sortie through `DroneTools → FlightGate → MavlinkHub → FakeVehicle` with the real Pixhawk envelope and compares the downloaded mission item by item. A second test puts the drone's home about 110 m from the planned home: `check_home_matches` warns, and the upload is refused by the gate's 60 m **geofence**, because the waypoints fall outside it. The refusal does not come from the home mismatch. A third test makes that explicit: with the home about 10 m off, `check_home_matches` warns and the upload still goes through.
 
 ## Honest gaps
 

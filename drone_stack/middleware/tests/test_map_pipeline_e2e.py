@@ -30,7 +30,8 @@ from map_synth import base_cfg, build_scene, stack_config_path  # noqa: E402
 from map_to_route import main as cli_main, route_config, run  # noqa: E402
 from mav_node import MavNode  # noqa: E402
 from mavlink_hub import MavlinkHub  # noqa: E402
-from safety_gate import FlightGate, _dist_m  # noqa: E402
+from geo_distance import distance_m  # noqa: E402
+from safety_gate import FlightGate  # noqa: E402
 from spray_mission import generate_spray_plan  # noqa: E402
 from stack_config import load_config  # noqa: E402
 
@@ -73,7 +74,7 @@ def test_pipeline_end_to_end_writes_a_consistent_plan(scene, planned):
     def near(e, n, tol=0.6):
         lat, lon = scene.latlon(e, n)
         return [f for f in feats
-                if _dist_m(lat, lon, f["properties"]["lat"], f["properties"]["lon"]) <= tol]
+                if distance_m(lat, lon, f["properties"]["lat"], f["properties"]["lon"]) <= tol]
     for wid, (e, n, _r) in scene.weeds.items():
         assert len(near(e, n)) == 1, wid
     se, sn, _sr, _sh = scene.shrub
@@ -92,7 +93,7 @@ def test_pipeline_sorties_respect_the_envelope_and_carry_no_spray_commands(plann
         for w in args["waypoints"]:
             assert set(w) == {"lat", "lon", "alt_m"}
             assert w["alt_m"] <= lim["max_alt_m"] + 1e-6
-            assert _dist_m(result["home"]["lat"], result["home"]["lon"],
+            assert distance_m(result["home"]["lat"], result["home"]["lon"],
                            w["lat"], w["lon"]) <= lim["geofence_radius_m"]
         blob = json.dumps(s).upper()
         assert not any(c in blob for c in SPRAY_CMDS)
@@ -120,6 +121,18 @@ def test_cli_matches_library(scene, tmp_path):
                      "--out", str(tmp_path / "o")]) == 0
     plan = json.loads((tmp_path / "o" / "mission_plan.json").read_text())
     assert plan["sorties"] and plan["no_sprayer_commands"] is True
+    # The separate --home-lat/--home-lon pair takes a negative latitude with
+    # no "=" and gives the same plan.
+    assert lat < 0
+    assert cli_main(["--config", str(cfg_path), "--home-lat", str(lat), "--home-lon", str(lon),
+                     "--out", str(tmp_path / "o2")]) == 0
+    plan2 = json.loads((tmp_path / "o2" / "mission_plan.json").read_text())
+    assert plan2["sorties"] == plan["sorties"]
+    with pytest.raises(SystemExit):
+        cli_main(["--config", str(cfg_path), "--home-lat", str(lat), "--out", str(tmp_path / "o3")])
+    with pytest.raises(SystemExit):
+        cli_main(["--config", str(cfg_path), f"--home={lat},{lon}", "--home-lat", str(lat),
+                  "--home-lon", str(lon), "--out", str(tmp_path / "o3")])
 
 
 def test_example_settings_file_is_valid_and_runs(scene, tmp_path, monkeypatch):
@@ -208,8 +221,9 @@ def test_planned_sorties_upload_to_pretend_drone_and_read_back(scene, planned, t
 
 def test_drone_armed_far_from_planned_home_is_caught(scene, planned, tmp_path):
     """Heights are relative to the planned home. A drone whose home is ~110 m
-    away must be flagged by check_home_matches, and the gate must refuse the
-    upload because the waypoints fall outside its 60 m geofence."""
+    away is flagged by check_home_matches (a warning only), and the upload is
+    refused by the gate's 60 m GEOFENCE, because the waypoints fall outside
+    it. The refusal does not come from the home mismatch: see the next test."""
     result, _ = planned
     lat, lon = scene.home_latlon
     tools, fv, _ = _stack(tmp_path, (lat + 0.001, lon, scene.ground(*scene.home_en)))
@@ -219,6 +233,26 @@ def test_drone_armed_far_from_planned_home_is_caught(scene, planned, tmp_path):
         r = tools.upload_mission(**result["sorties"][0]["upload_mission_args"])
         assert r.get("blocked"), r
         assert fv.mission == []
+    finally:
+        tools.close()
+        fv.stop()
+
+
+def test_home_mismatch_only_warns_upload_is_not_blocked(scene, planned, tmp_path):
+    """Documents the gap Grok flagged (O-21). With the drone's home ~10 m from
+    the planned home, check_home_matches warns, but nothing enforces it: the
+    upload goes through and every height is off by the ground difference.
+    Running check_home_matches before upload is an OPERATOR step. If the gate
+    is ever made to refuse this (owner's call), flip the last asserts."""
+    result, _ = planned
+    lat, lon = scene.home_latlon
+    tools, fv, _ = _stack(tmp_path, (lat + 0.00009, lon, scene.ground(*scene.home_en)))
+    try:
+        warn = check_home_matches(result["home"], tools.node.home())
+        assert warn and "re-plan" in warn[0]
+        r = _confirm(tools.upload_mission, **result["sorties"][0]["upload_mission_args"])
+        assert r["ok"] and not r.get("blocked"), r              # NOT refused
+        assert tools.get_mission()["count"] > 0                  # and it is on the drone
     finally:
         tools.close()
         fv.stop()
