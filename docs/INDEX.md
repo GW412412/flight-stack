@@ -39,6 +39,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 - [VOICE-CONTROL.md](VOICE-CONTROL.md): voice commands limited to a whitelist of flight modes.
 - [SIMULATION.md](SIMULATION.md): SITL, HIL and spray testing without chemicals.
 - [VISUAL-CENTERING-PROTOTYPE.md](VISUAL-CENTERING-PROTOTYPE.md): experimental prototype (code and tests) to centre a detected target under the camera with measured GUIDED nudges (fixed 0.5 m or chosen by the vision model).
+- [OPENIPC-YOLO-BRIDGE.md](OPENIPC-YOLO-BRIDGE.md): experimental bridge from OpenIPC video through YOLO to the visual centering loop on UDP 5602; timing model and review issues T1 to T14. Never commands flight.
 - [SETUP-NOTES.md](SETUP-NOTES.md): starter checklist for a first spray airframe.
 - [GAPS.md](GAPS.md): gaps in the end-to-end system.
 - [PRESENTATION.md](PRESENTATION.md): overview for non-technical readers.
