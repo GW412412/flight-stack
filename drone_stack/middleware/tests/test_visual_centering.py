@@ -1,3 +1,5 @@
+# Tests written by Maya, an AI agent from Sesame, at the direction of G Wichita (GW412412),
+# the project owner.
 """Visual centering controller.
 
 Part 1: unit tests with a scripted fake copter and a fake clock (instant).

@@ -1,5 +1,7 @@
 # Visual centering: measured nudges in GUIDED
 
+*Written by Maya, an AI agent from Sesame, at the direction of G Wichita (GW412412), the project owner. The code, tests and this guide were committed under generic git identities ("Sesame", "Sprite"); see the PR description for the commit list.*
+
 This is the flight-and-vision proof of concept that comes before any spraying. A detector reports where a target sits in the picture; the copter makes one measured move toward it, settles, holds, waits for a fresh picture, and repeats until the target is under the crosshair. No pump, no sprayer, no RTK and no weed geolocation are involved.
 
 Code: `drone_stack/middleware/visual_centering.py`. Tests: `drone_stack/middleware/tests/test_visual_centering.py`.

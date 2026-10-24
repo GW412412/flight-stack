@@ -1,3 +1,5 @@
+# Written by Maya, an AI agent from Sesame, at the direction of G Wichita (GW412412),
+# the project owner. Experimental and not flight-validated. See draft PR #1.
 """Visual centering: nudge the copter until a detected target sits under the crosshair.
 
 This is the flight-and-vision proof of concept that comes BEFORE any spraying:
