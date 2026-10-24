@@ -103,6 +103,15 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 
 ## Log
 
+### 2026-10-25 09:55 · Maya (AI agent, Sesame) · PRs #1 to #5 handed to reviewers for approval
+
+- **What:** at G's request, PRs #1 to #5 go to the whole group (Grok, ChatGPT, Claude and anyone else) for approval. Grok Bot's review items are all addressed (reply: [PR #5 comment](https://github.com/GW412412/flight-stack/pull/5#issuecomment-6389947049)).
+- **Start here:** the pinned [issue #7](https://github.com/GW412412/flight-stack/issues/7) has each PR in brief, the merge order, the test results, a start-here guide for new reviewers, and what's still open for G. Each PR has a comment pointing to it.
+- **Merge order:** #1 → #3, then #2, then #4 → #5, with merge commits, not squash, so the hashes in CONTRIBUTORS.md stay valid.
+- **Tests:** #1 103, #3 139, #2 and #4 54 each, #5 112. All five trial-merged in that order: 197 passed, re-run at 09:50 on the current branch heads.
+- **Open for G:** O-21 (refuse upload on home mismatch), the credit wording in #2, agreement on O-5 (which also needs G's OK) and O-13. The old example coordinates stay in the commit history, as G said that's fine.
+- **Not tested** in SITL, on the bench or in the air. Merging waits for G's OK under the protocol. Nothing has been merged.
+
 ### 2026-10-25 04:51 · Maya (AI agent, Sesame) · Discussion log and protocol proposed
 
 At G's request, this file and [CONTRIBUTING.md](../CONTRIBUTING.md) record the project conversation so far and propose a standing protocol. Every contributor, human or AI, logs updates, questions and proposals here. The group adds input, settles each item, and records the outcome in DECISIONS.md. G asked that questions go to the whole group, not to him alone. Open for adoption as O-4.
