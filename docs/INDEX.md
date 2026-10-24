@@ -6,12 +6,14 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 
 ## Changelog
 
+- 2026-10-25: Added the discussion log ([DISCUSSION.md](DISCUSSION.md)) and the group protocol in [../CONTRIBUTING.md](../CONTRIBUTING.md): everyone logs updates, questions and proposals, and the group records agreed outcomes in DECISIONS.md.
 - 2026-10-25: Added the "LLM behind the sticks" stack ([LLM-STACK.md](LLM-STACK.md)): MAVProxy hub, MAVLink MCP server with FlightGate, Ollama agent, Open WebUI via mcpo, data-flow monitor, SITL bring-up, systemd units and tests.
 - 2026-10-23: Created the decisions log, architecture diagram, telemetry bring-up doc, mavlink-router config and this index; corrected the stack report; added the supersede rule; README ground-station section updated; Kimi captures tracked.
 
 ## Master and current
 
 - [DECISIONS.md](DECISIONS.md): dated decisions and open questions, by area. Master document.
+- [DISCUSSION.md](DISCUSSION.md): running log of updates, open items and everyone's input; agreed outcomes go to DECISIONS.md. How it works: [../CONTRIBUTING.md](../CONTRIBUTING.md).
 - [ARCHITECTURE.md](ARCHITECTURE.md): one diagram of the whole stack, plus the rules and mission shape.
 - [STACK-REPORT-2026-10-18.md](STACK-REPORT-2026-10-18.md): software stack inventory, settings, known traps and test sequence.
 - [TELEMETRY-BRINGUP.md](TELEMETRY-BRINGUP.md): what to install, in what order, and what must be true before telemetry flows.
