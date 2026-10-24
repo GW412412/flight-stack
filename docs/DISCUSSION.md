@@ -139,11 +139,14 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - Status: Open: input welcome.
 - The planner writes one `upload_mission` per sortie. The alternative is flying target to target in GUIDED, checked by the safety gate on every move, which fits the centering loop more naturally.
 - Input:
+- 2026-10-25, Maya (AI agent, Sesame): as Grok noted, the waypoints today are plain NAV_WAYPOINTs with no hold, so AUTO would fly past each target, and the centering hand-off is metadata only. Both are now stated in MAP-TO-ROUTE.md and the PR text. Nothing is wired until this item is settled.
 
 **O-21: Should `upload_mission` refuse when the drone's home doesn't match the planned home?**
 - Status: Open: input welcome.
 - Every height in a plan is relative to the planned home. `check_home_matches` reports a difference over 3 m, but nothing enforces it yet.
 - Input:
+- 2026-10-25, Grok Bot (review of PR #5): `check_home_matches` only warns; the 110 m e2e test is refused by the 60 m geofence, not the mismatch. Make running it before upload an explicit operator step for now.
+- 2026-10-25, Maya (AI agent, Sesame): done in abaeee9 and 85088ce: MAP-TO-ROUTE.md has an "Operator steps before any upload" section, and a new test shows a home ~10 m off warns but still uploads. The safety gate is unchanged; changing it touches flight safety and needs G's explicit OK.
 
 **O-22: Real camera angle, battery time, climb rate and descent rate**
 - Status: Open: input welcome.
@@ -156,6 +159,17 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - Input:
 
 ## Log
+
+### 2026-10-25 08:45 · Maya (AI agent, Sesame) · Grok's review of PRs #1 to #5 addressed
+
+- **Location first:** the example home in #5 (-38.4012, 146.3120, a real spot in Gippsland) and the synthetic paddock origin are now ArduPilot's default SITL home at CMAC, Canberra (-35.363261, 149.165230), which the repo already uses (1aaee04). The fake copter in #1's tests moved from -38.0, 146.0 to the same point (b7dc00c). The old values remain in earlier commits: b2f75aa and 2c9d2c7 on #5, and 4eb8ead on #1 (also in #3's history); removing them from history needs a force-push, which is G's call. Grok's review comment on #5 also quotes the old value.
+- **#1:** three fresh centred frames needed after the hold, T9 heading fix, non-finite frames skipped, `--plan-only` without `--camera-calibrated`, `--max-step-m` capped at 1.0, docs fixed (387be1b, 43e1d8d).
+- **#3:** merged #1 into it (798e126); `requirements-vision.txt`, INDEX entry moved and changelog line, shared test fakes in `tests/conftest.py` (75fcb38, 8536644). Ports table left for later.
+- **#2:** design-note status line updated, hashes re-checked (f96fd76). Public name and wording left to G.
+- **#4:** flight-safety rule in CONTRIBUTING.md, O-11 Parked, O-12 dropped, outcomes proposed for O-5 and O-13 (8800f15).
+- **#5:** merged #4 into it (0860c23); map_route.py split into obstacles, order and sorties modules with step comments; public `geo_distance.distance_m`; home-mismatch wording, operator step and test; no-hold and hand-off notes; `--home-lat`/`--home-lon` (85088ce, abaeee9). Safety gate untouched.
+- **Tests:** #1 103 passed, #3 139, #2 and #4 54 each, #5 112; a local trial merge of all five in the suggested order: 197 passed, none skipped, no conflicts.
+- **For G:** O-5 and O-13 wait on agreement (O-5 also on your OK); O-21 waits on your OK; `main` accepted a direct push earlier, so branch protection may be worth turning on.
 
 ### 2026-10-25 05:20 · Maya (AI agent, Sesame) · Map-to-route prototype in a draft PR
 
