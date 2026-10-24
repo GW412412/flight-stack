@@ -1,0 +1,23 @@
+# drone_stack/middleware - extra packages for the OpenIPC-to-YOLO bridge
+# (docs/OPENIPC-YOLO-BRIDGE.md). Install on the ground-station computer that
+# runs the bridge, on top of requirements.txt:
+#   pip install -r requirements.txt -r requirements-vision.txt
+#
+# Nothing here is needed by the flight stack or the MCP server.
+#
+# --- colour-card detector and the benchmark ---
+numpy>=1.24
+#
+# --- decoding a camera stream or a file ---
+# The pip wheels have no GStreamer, so RTP over UDP needs an OpenCV built with
+# GStreamer, or have the ground station restream the camera as RTSP.
+# opencv-python-headless also works on a machine with no display.
+opencv-python>=4.8
+#
+# --- YOLO detector (optional, NOT installed by default) ---
+# Ultralytics is AGPL-3.0 and this repo is MIT. The owner decides whether that
+# is acceptable before it becomes the default detector (see docs/DISCUSSION.md).
+# Until then install it by hand only where you need it:
+#   pip install "ultralytics>=8.3"
+# The model file must already be on disk; the bridge will not download weights
+# unless allow_download = true.

@@ -26,8 +26,8 @@ from vision_ingest import (Frame, LatestFrameSlot, OpenCVStreamSource, ReplayEve
                            ReplayFrameSource, gst_rtp_pipeline, redact_url)
 from visual_centering import (CenteringController, CenteringLimits, Detection,
                               SimulatedDownCamera, UdpJsonDetectionSource, body_to_ned)
-from test_visual_centering import (CAM, M_PER_DEG, Clock, FakeTools, _free_udp_port,
-                                   _wait_for, airborne)  # noqa: F401  (airborne = fixture)
+from conftest import (CAM, M_PER_DEG, Clock, FakeTools,  # noqa: F401  (shared fakes)
+                      free_udp_port, wait_for)
 
 W, H = 640, 480
 
@@ -479,7 +479,7 @@ def test_threaded_run_with_replay_publishes_newest_frames():
     th = threading.Thread(target=b.run, args=(slot,), daemon=True)
     th.start()
     src.run_realtime()
-    assert _wait_for(lambda: box.latest() is not None and box.latest().cx > 225, 3.0)
+    assert wait_for(lambda: box.latest() is not None and box.latest().cx > 225, 3.0)
     b.stop()
     th.join(1.0)
     st = b.stats()
@@ -510,7 +510,7 @@ def test_cli_budget_and_benchmark(capsys):
 
 # =============================================================== integration
 def test_udp_sink_feeds_existing_controller_input():
-    port = _free_udp_port()
+    port = free_udp_port()
     rx = UdpJsonDetectionSource(port=port)
     try:
         c = Clocks(wall_off=0.0)
@@ -520,7 +520,7 @@ def test_udp_sink_feeds_existing_controller_input():
         b.selector.min_track_frames = 1
         out = b.process_frame(frame(c, 1, red_square(100, 50)))
         assert out.published
-        assert _wait_for(lambda: rx.latest() is not None, 3.0)
+        assert wait_for(lambda: rx.latest() is not None, 3.0)
         assert rx.latest() == out.detection and rx.bad_packets == 0
     finally:
         rx.close()
@@ -572,7 +572,7 @@ def test_e2e_bridge_over_udp_with_telemetry_heading_through_real_stack(airborne)
     tgt = (s["lat"] + 1.1 / M_PER_DEG,
            s["lon"] + 0.8 / (M_PER_DEG * math.cos(math.radians(s["lat"]))))
     cam = SimulatedDownCamera(t.node.get_status, tgt, CAM)
-    port = _free_udp_port()
+    port = free_udp_port()
     rx = UdpJsonDetectionSource(port=port)
     cfg = BridgeConfig()
     cfg.telemetry.enabled = True
@@ -604,7 +604,7 @@ def test_e2e_bridge_over_udp_with_telemetry_heading_through_real_stack(airborne)
         th.start()
     seen_before = list(fv.commands_seen)
     try:
-        assert _wait_for(lambda: rx.latest() is not None, 10.0), b.stats()
+        assert wait_for(lambda: rx.latest() is not None, 10.0), b.stats()
         res = CenteringController(t, rx, CAM).run()
     finally:
         stop.set()

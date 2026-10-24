@@ -47,6 +47,8 @@ visual_centering.py   existing centering loop (unchanged) -> DroneTools -> safet
 | `drone_stack/middleware/openipc_yolo_bridge.py` | `VisionBridge` (the pipeline), settings loader, timing budget report, UDP sink, optional slow "observer" model hook, benchmark and command line. |
 | `config/vision_bridge.example.toml` | Example settings. Every timing number in it is a placeholder. |
 | `drone_stack/middleware/tests/test_vision_bridge.py` | 36 tests (one needs a working OpenCV and is skipped otherwise). |
+| `drone_stack/middleware/tests/conftest.py` | Shared fakes (`Clock`, `FakeTools`, `CAM`) and the `airborne` fixture, used by this test file and the centering tests. |
+| `drone_stack/middleware/requirements-vision.txt` | The bridge's extra packages (numpy, OpenCV). Ultralytics is listed as a by-hand install because of its AGPL licence. |
 
 ### What each frame goes through
 
@@ -72,11 +74,15 @@ The same `visual_centering.Detection` JSON the centering loop already reads, plu
 
 Run everything from `drone_stack/middleware`, in the virtual environment from `requirements.txt`.
 
-The bridge needs packages that `requirements.txt` does not list yet:
+The bridge needs packages that `requirements.txt` does not list. They are in `drone_stack/middleware/requirements-vision.txt`:
+
+```bash
+pip install -r requirements.txt -r requirements-vision.txt
+```
 
 - `numpy` for the colour-card detector and the benchmark.
 - OpenCV (`opencv-python`) to decode a camera stream or a file. The pip wheels have no GStreamer, so RTP over UDP needs an OpenCV built with GStreamer, or have the ground station restream it as RTSP.
-- `ultralytics` only for the YOLO detector. The model file must already be on disk; the bridge will not download weights unless `allow_download = true`.
+- `ultralytics` only for the YOLO detector. It is left out of `requirements-vision.txt` on purpose: it is AGPL-3.0 and this repo is MIT, so the owner decides before it becomes the default detector. Install it by hand where you need it. The model file must already be on disk; the bridge will not download weights unless `allow_download = true`.
 
 The camera password comes from the environment, never from the settings file:
 
@@ -135,7 +141,7 @@ Set `model_path`, `classes` and `class_names` for your weed model first. The bri
 python -m pytest -q tests
 ```
 
-On this branch: 119 passed and 1 skipped. That is the 84 tests from the centering prototype plus 35 of the 36 new ones. The skipped test decodes a real video file and needs an OpenCV that loads; it passed in a separate environment with OpenCV 5.0.0.
+On this branch: 139 passed, none skipped, with OpenCV 5.0.0 installed. That is the 103 tests from the centering prototype plus the 36 new ones. Without an OpenCV that loads, the one test that decodes a real video file is skipped.
 
 The new tests cover stale, out-of-order and pre-reconnect frames; clock offsets and jumps, a ground-station clock step and a flight-controller reboot; disconnects and the mailbox never holding more than it should; YOLO result parsing with a stand-in (no model needed); and one end-to-end run: drawn camera frames, bridge, port 5602, centering loop, the real flight tools and safety gate, then the pretend drone, with heading from flight-controller telemetry. That run centred the target within 35 cm with no mode changes and no arming.
 
