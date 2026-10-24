@@ -8,7 +8,8 @@ Builds, in a temp dir, the three files ODM would write:
     odm_dem/dsm.tif                    float32, 10 cm/px, nodata -9999
     odm_dem/dtm.tif                    float32, 10 cm/px, nodata -9999
 
-The scene is a 50 m x 50 m paddock near the Strzelecki Ranges that rises
+The scene is a 50 m x 50 m paddock at a dummy location (beside ArduPilot's
+default SITL home, CMAC, Canberra; not a real paddock) that rises
 towards the east, with known weeds, a shrub, a tree, and a strip the
 orthophoto did not cover. Everything is analytic, so tests can compare the
 pipeline's answers with the truth.
@@ -28,7 +29,7 @@ from pyproj import Transformer
 from rasterio.transform import from_origin
 
 EPSG = 32755                       # WGS 84 / UTM zone 55S
-ORIGIN_LATLON = (-38.4000, 146.3000)
+ORIGIN_LATLON = (-35.3630, 149.1650)   # dummy: next to ArduPilot's default SITL home (CMAC)
 SIZE_M = 50.0
 ORTHO_RES = 0.05
 DEM_RES = 0.10

@@ -61,7 +61,7 @@ def test_missing_file_refused(scene, tmp_path):
 def test_latlon_round_trip_within_a_centimetre(scene, om):
     x, y = scene.utm(17.3, 23.9)
     lat, lon = om.geo.to_latlon(x, y)
-    assert -38.41 < lat < -38.39 and 146.29 < lon < 146.31
+    assert -35.37 < lat < -35.35 and 149.15 < lon < 149.18
     x2, y2 = om.geo.from_latlon(lat, lon)
     assert math.hypot(x2 - x, y2 - y) < 0.01
 

@@ -300,9 +300,9 @@ def test_bad_inputs_refused(om, scene, safety):
 
 
 def test_home_mismatch_check():
-    h = {"lat": -38.4, "lon": 146.3}
-    assert check_home_matches(h, {"lat": -38.4, "lon": 146.3}) == []
-    assert "re-plan" in check_home_matches(h, {"lat": -38.4001, "lon": 146.3})[0]   # ~11 m
+    h = {"lat": -35.363, "lon": 149.165}
+    assert check_home_matches(h, {"lat": -35.363, "lon": 149.165}) == []
+    assert "re-plan" in check_home_matches(h, {"lat": -35.3631, "lon": 149.165})[0]   # ~11 m
     assert check_home_matches(h, None) == ["vehicle home unknown"]
 
 

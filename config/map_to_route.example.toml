@@ -4,7 +4,7 @@
 #
 # Run from drone_stack/middleware:
 #   python map_to_route.py --config ../../config/map_to_route.example.toml \
-#       --project /path/to/odm/project --home=-38.4012,146.3120 --out plan/
+#       --project /path/to/odm/project --home=-35.363261,149.165230 --out plan/
 # Write --home with "=": a negative latitude otherwise reads as an option.
 #
 # Every value marked PLACEHOLDER needs a real measurement before it means
@@ -26,7 +26,7 @@ captured_at = "2026-10-20"   # date the survey was flown (map age warnings)
 [home]
 # Take-off point. --home on the command line overrides it. Every height in
 # the plan is relative to this point's ground height in the DTM.
-latlon = [-38.4012, 146.3120]
+latlon = [-35.363261, 149.165230]   # DUMMY: ArduPilot's default SITL home (CMAC, Canberra), not a real paddock
 
 [tiles]
 size_px = 640

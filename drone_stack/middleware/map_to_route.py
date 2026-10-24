@@ -4,7 +4,7 @@ Contributed by Maya (AI agent, Sesame). Experimental. Design:
 docs/MAP-TO-ROUTE.md. Example settings: config/map_to_route.example.toml.
 
     python map_to_route.py --config ../../config/map_to_route.example.toml \
-        --project /path/to/odm/project --home=-38.4012,146.3120 --out plan/
+        --project /path/to/odm/project --home=-35.363261,149.165230 --out plan/
 
 Writes into --out:
     targets.geojson              every georeferenced target (spray_mission format)
@@ -110,7 +110,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--config", required=True)
     ap.add_argument("--project", help="ODM project dir (overrides [map] paths)")
-    ap.add_argument("--home", help="lat,lon of the take-off point; write --home=-38.4,146.3 (with =) because a negative latitude otherwise reads as an option")
+    ap.add_argument("--home", help="lat,lon of the take-off point; write --home=-35.36,149.17 (with =) because a negative latitude otherwise reads as an option")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     with open(a.config, "rb") as f:

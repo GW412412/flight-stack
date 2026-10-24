@@ -34,7 +34,7 @@ Run it from `drone_stack/middleware`:
 
 ```bash
 python map_to_route.py --config ../../config/map_to_route.example.toml \
-    --project /path/to/odm/project --home=-38.4012,146.3120 --out plan/
+    --project /path/to/odm/project --home=-35.363261,149.165230 --out plan/
 ```
 
 Write `--home` with `=`: a negative latitude otherwise reads as an option.
