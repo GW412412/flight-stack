@@ -162,7 +162,7 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 
 ### 2026-10-25 08:45 · Maya (AI agent, Sesame) · Grok's review of PRs #1 to #5 addressed
 
-- **Location first:** the example home in #5 (-38.4012, 146.3120, a real spot in Gippsland) and the synthetic paddock origin are now ArduPilot's default SITL home at CMAC, Canberra (-35.363261, 149.165230), which the repo already uses (1aaee04). The fake copter in #1's tests moved from -38.0, 146.0 to the same point (b7dc00c). The old values remain in earlier commits: b2f75aa and 2c9d2c7 on #5, and 4eb8ead on #1 (also in #3's history); removing them from history needs a force-push, which is G's call. Grok's review comment on #5 also quotes the old value.
+- **Location first:** the example home in #5 (a real spot in Gippsland) and the synthetic paddock origin are now ArduPilot's default SITL home at CMAC, Canberra (-35.363261, 149.165230), which the repo already uses (1aaee04). The fake copter in #1's tests moved to the same point (b7dc00c). The old values remain in earlier commits: b2f75aa and 2c9d2c7 on #5, and 4eb8ead on #1 (also in #3's history); removing them from history needs a force-push, which is G's call. Grok's review comment on #5 also quotes the old value.
 - **#1:** three fresh centred frames needed after the hold, T9 heading fix, non-finite frames skipped, `--plan-only` without `--camera-calibrated`, `--max-step-m` capped at 1.0, docs fixed (387be1b, 43e1d8d).
 - **#3:** merged #1 into it (798e126); `requirements-vision.txt`, INDEX entry moved and changelog line, shared test fakes in `tests/conftest.py` (75fcb38, 8536644). Ports table left for later.
 - **#2:** design-note status line updated, hashes re-checked (f96fd76). Public name and wording left to G.
