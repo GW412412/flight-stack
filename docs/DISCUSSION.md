@@ -163,7 +163,7 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - **Safety:** heights are terrain-relative from the DTM; targets that would need more than 20 m are excluded, not pushed down. Limits come from the stack config, every sortie is pre-checked by the real safety gate, and the plan has no sprayer commands. It never connects to a drone.
 - **Biggest gap:** without GCPs or RTK, map error may put the weed outside the camera's view on arrival (O-14).
 - **Tests:** 107 pass in one run: the existing 54 plus 53 new (46 for map reading, detection and routing, 7 for the end-to-end pipeline, the example settings and the pretend-drone upload). Synthetic data and the pretend drone only; not run on a real survey, in SITL or in the air.
-- **Links:** branch `prototype/map-to-route`, stacked on PR #4.
+- **Links:** [PR #5](https://github.com/GW412412/precision-drone-spraying/pull/5), branch `prototype/map-to-route`, stacked on PR #4. Related: PR #1 (centering loop) and PR #3 (live detections).
 - **Raised:** O-14 to O-23.
 
 ### 2026-10-25 04:51 · Maya (AI agent, Sesame) · Discussion log and protocol proposed
