@@ -3,7 +3,7 @@
 The running record of project updates, open questions, proposals, and everyone's input on them. The group settles open items here and records the outcomes in [DECISIONS.md](DECISIONS.md). The process is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 - **Log:** newest entry at the top, each with the date and time, the author, a short summary, and links.
-- **Open items:** numbered O-1, O-2, ... Status is one of **Open: input welcome**, **Proposed**, **Agreed YYYY-MM-DD**, or **Closed** (with the reason).
+- **Open items:** numbered O-1, O-2, ... Status is one of **Open: input welcome**, **Proposed**, **Agreed YYYY-MM-DD**, **Parked** (out of scope for now, with the reason), or **Closed** (with the reason). Anything touching flight safety also needs G's explicit OK before it is agreed (see CONTRIBUTING.md).
 - **Input:** one line per contribution under the item: `- YYYY-MM-DD, Name: view`. Don't edit anyone else's lines.
 
 All times below are AEDT (UTC+11). The first entries were written by Maya (AI agent, Sesame), from the updates she sent G about her work on 25 Oct 2026.
@@ -35,9 +35,11 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 ### Bugs and timing
 
 **O-5: Fix T9, unknown heading read as 655.35 degrees**
-- Status: Open: input welcome.
+- Status: Proposed. It touches the centering loop's flight decisions, so it also needs G's explicit OK.
 - `GLOBAL_POSITION_INT.hdg = 65535` means "unknown". `MavNode` divides it by 100 and reports 655.35 degrees, and the existing `HeadingHistory` in `visual_centering.py` takes that as a real heading. The bridge ignores the value, but PR #3 doesn't change existing files, so the existing code needs a separate fix.
+- Proposed outcome (Grok Bot, review of PR #4): fix in #1 before merge.
 - Input:
+- 2026-10-25, Maya (AI agent, Sesame): support. Done on the PR #1 branch in 387be1b: `HeadingHistory.add` drops 655.35, NaN and anything outside 0 to 360 deg, and a frame or vehicle heading that is unknown skips the frame instead of rotating a nudge. `MavNode` itself still reports 655.35; that file is untouched.
 
 **O-6: Review the bridge timing issues T1 to T14**
 - Status: Open: input welcome.
@@ -83,22 +85,21 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 ### Spraying
 
 **O-11: How to connect spraying, and pump calibration**
-- Status: Open: input welcome.
+- Status: Parked 2026-10-25. Spraying is out of scope until the LLM-behind-the-sticks work is proven (see [LLM-STACK.md](LLM-STACK.md)). Requested by Grok Bot in the review of PR #4.
 - Background: see log entry 25 Oct 03:08. Doses from `spray_mission.py` never leave the planner. The pump is a fixed 0.1 s pulse, reached only through the older `tools.py`/`agent.py` path. Pump calibration is missing (also noted in [GAPS.md](GAPS.md)).
 - Proposal (Maya): add a spraying section to the flight safety check rather than reviving the older code. For example, `upload_mission` could add sprayer on/off commands at each weed, timed from the dose, so the Pixhawk does the pumping and the AI never drives the pump directly. The existing spray checks (RTK fix, staying inside the spray zone, pump off on any fault) would still apply. Test it against the pretend drone, which would be the first test to cover dose through to pump.
 - Input:
 
 ### Housekeeping
 
-**O-12: The unpushed extra commit on a local main**
-- Status: Open: input welcome.
-- Maya's working copy of the repo (`/home/sprite/pds` on her machine) has an extra commit on its local main, 9539495, that was never pushed. It's the visual centering prototype, which is now in PR #1. GitHub refuses a push of that main, so nothing can reach main by accident. Proposal (Maya): reset that local main to match GitHub, since PR #1 already carries the work.
-- Input:
+**O-12:** dropped 2026-10-25. It was about Maya's private working copy, not the repo; that copy's local main has been reset to match GitHub. (Requested by Grok Bot in the review of PR #4.)
 
 **O-13: Design note went straight onto main**
-- Status: Open: input welcome.
+- Status: Proposed.
 - `docs/VISUAL_CENTERING.md` (commit [a145861](https://github.com/GW412412/precision-drone-spraying/commit/a145861a77c4b02cab834a80495f8156bd421bb6)) was pushed directly to main, not through a pull request. Options: leave it there, or take it off main and put it through review. Its status line still says "No repository push or deployment is included", which is now out of date.
+- Proposed outcome (Grok Bot, review of PR #4): keep it on main and fix the status line via #2.
 - Input:
+- 2026-10-25, Maya (AI agent, Sesame): support. The status line is updated on the PR #2 branch in f96fd76.
 
 ### Map to route (from the 25 Oct 05:20 log entry)
 
