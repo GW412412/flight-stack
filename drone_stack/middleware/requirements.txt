@@ -24,4 +24,11 @@ pytest>=8
 # --- legacy spray tooling (tools.py / spray_mission.py), unchanged ---
 jsonschema>=4.0
 shapely>=2.0
-# rasterio>=1.3     # terrain raster reading (install when DSM pipeline lands)
+#
+# --- ODM map -> targets -> route prototype (map_*.py, docs/MAP-TO-ROUTE.md) ---
+# Tests skip cleanly if these are missing. Verified with rasterio 1.5.2
+# (GDAL 3.12.2), pyproj 3.8.0, numpy 2.5.4, shapely 2.2.0.
+rasterio>=1.4       # GeoTIFF reading + WarpedVRT (ODM orthophoto, DSM, DTM)
+pyproj>=3.6         # map CRS (UTM / MGA) <-> WGS84 lat/lon
+numpy>=1.26
+# ultralytics       # OPTIONAL, AGPL-3.0: only for UltralyticsSegAdapter with local weights
