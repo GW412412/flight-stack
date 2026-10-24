@@ -5,3 +5,21 @@ __pycache__/
 
 drone_stack/.venv/
 *.plan
+
+# --- LLM stack (2026-10-25) ---------------------------------------------
+# virtualenvs (drone_stack/.venv may be a symlink: no trailing slash)
+drone_stack/.venv
+.venv
+venv/
+# flight logs / telemetry recordings / SITL state (large, regenerated)
+recordings/
+*.tlog
+*.tlog.raw
+*.bin
+eeprom.bin
+mav.parm
+terrain/
+_sitl/
+.pytest_cache/
+# editor / office lock files
+.~lock*

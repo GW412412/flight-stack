@@ -1,0 +1,26 @@
+# LLM-behind-the-sticks profile: ArduCopter SITL on this PC.
+# Loaded by drone_stack/middleware/mcp_server.py --config config/llm_stack.sitl.toml
+# Every key is documented in drone_stack/middleware/stack_config.py.
+# Anything not listed here keeps the (conservative) default from that file.
+profile = "sitl"
+
+[mavlink]
+url = "udpin:127.0.0.1:14560"   # MAVProxy --out udp:127.0.0.1:14560
+send_heartbeat = true
+request_streams = false         # MAVProxy already requests streams
+
+[safety]
+actuation_enabled = true        # SITL: let the LLM fly
+dry_run = false
+confirm_mode = "echo"           # token returned to the LLM (fine in sim)
+max_alt_m = 30.0
+geofence_radius_m = 150.0
+max_speed_ms = 6.0
+require_rc_link = false         # SITL has no real receiver
+min_battery_pct = 30
+
+[server]
+transport = "streamable-http"   # http://127.0.0.1:8765/mcp
+host = "127.0.0.1"
+port = 8765
+log_dir = "logs/llm-stack"

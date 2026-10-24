@@ -1,5 +1,27 @@
+# drone_stack/middleware - Python dependencies
+#   python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+#
+# --- MAVLink ---
 pymavlink>=2.4.40
+MAVProxy>=1.8.70          # the ground-station hub (start_mavproxy.sh)
+#
+# --- MCP server + LLM agent ---
+# mcp 1.x API (FastMCP). The 2.x SDK renamed FastMCP -> MCPServer and mcpo
+# (Open WebUI bridge) still targets 1.x, so stay below 2 for now.
+mcp[cli]>=1.12,<2
+pydantic>=2.7
 ollama>=0.4
+#
+# --- Open WebUI bridge (optional; MCP -> OpenAPI on :8001) ---
+mcpo>=0.0.17
+# mcpo 0.0.20 passes ssl_* kwargs to FastAPI(); newer FastAPI (seen on 0.145+) rejects them
+# ("unexpected keyword argument ssl_certfile"). Drop this pin once mcpo is fixed.
+fastapi>=0.115,<0.143   # 0.142.0 verified with mcpo 0.0.20
+#
+# --- tests ---
+pytest>=8
+#
+# --- legacy spray tooling (tools.py / spray_mission.py), unchanged ---
 jsonschema>=4.0
 shapely>=2.0
 # rasterio>=1.3     # terrain raster reading (install when DSM pipeline lands)
