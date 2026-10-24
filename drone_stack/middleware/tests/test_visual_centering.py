@@ -48,7 +48,7 @@ class FakeTools:
 
     def __init__(self, heading=0.0, mode="GUIDED", dry_run=False):
         self.state = dict(link_ok=True, mode=mode, armed=True, rel_alt=6.0,
-                          lat=-38.0, lon=146.0, heading=heading)
+                          lat=-35.363261, lon=149.165230, heading=heading)
         self.gate = FakeGate()
         self.hub = SimpleNamespace(dry_run=dry_run)
         self.calls = []
