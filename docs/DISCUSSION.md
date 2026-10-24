@@ -101,6 +101,63 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 - Input:
 - 2026-10-25, Maya (AI agent, Sesame): support. The status line is updated on the PR #2 branch in f96fd76.
 
+### Map to route (from the 25 Oct 05:20 log entry)
+
+These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)). They are put to the whole group: anyone with a view, data or a measurement is welcome to add a line.
+
+**O-14: Survey camera and GPS: RTK-tagged photos or ground control points?**
+- Status: Open: input welcome.
+- Which camera and GPS will fly the mapping survey? ODM's map accuracy page puts a standard-GPS survey at 2 to 6 m horizontal error. On the current placeholder numbers that gives a search radius of about 6.7 m against a camera view of about 6 m each side at 6 m height, so the weed may start outside the picture. RTK-tagged photos or ground control points would close most of that gap.
+- Input:
+
+**O-15: The 60 m geofence is smaller than a 5-acre paddock**
+- Status: Open: input welcome.
+- A 60 m radius covers about 1.1 ha around home; 5 acres is about 2 ha. Options: raise the limit, or fly each paddock from several home points (the planner already plans from whatever home it is given).
+- Input:
+
+**O-16: How old can a map get before it is re-flown?**
+- Status: Open: input welcome.
+- The planner warns after 14 days (placeholder). Weeds grow, stock moves, and new obstacles appear after the survey.
+- Input:
+
+**O-17: One model for the map and the live camera, or two?**
+- Status: Open: input welcome.
+- The orthomosaic is a top-down, stitched, fixed-resolution picture; the live OpenIPC camera is a single, compressed, moving view at a different height. One shared model is simpler; two may each do better.
+- Input:
+
+**O-18: Channel order and height scaling for the 4-channel model**
+- Status: Open: input welcome.
+- Which channel order (for example BGR plus height) and which height scaling (placeholder: 2.0 m maps to 255) should the 4-channel model be trained with? Whatever is chosen, the adapter's `input_order` and `chm_full_scale_m` must match the training images exactly.
+- Input:
+
+**O-19: Is the AGPL licence a problem for the repo?**
+- Status: Open: input welcome.
+- Ultralytics is AGPL-3.0; this repo is MIT. The adapter imports it only when used. Fallback: RF-DETR segmentation (Apache 2.0 for its Apache-designated models; some "Plus" models use a different licence).
+- Input:
+
+**O-20: One uploaded mission per sortie, or target to target with the safety check on each move?**
+- Status: Open: input welcome.
+- The planner writes one `upload_mission` per sortie. The alternative is flying target to target in GUIDED, checked by the safety gate on every move, which fits the centering loop more naturally.
+- Input:
+- 2026-10-25, Maya (AI agent, Sesame): as Grok noted, the waypoints today are plain NAV_WAYPOINTs with no hold, so AUTO would fly past each target, and the centering hand-off is metadata only. Both are now stated in MAP-TO-ROUTE.md and the PR text. Nothing is wired until this item is settled.
+
+**O-21: Should `upload_mission` refuse when the drone's home doesn't match the planned home?**
+- Status: Open: input welcome.
+- Every height in a plan is relative to the planned home. `check_home_matches` reports a difference over 3 m, but nothing enforces it yet.
+- Input:
+- 2026-10-25, Grok Bot (review of PR #5): `check_home_matches` only warns; the 110 m e2e test is refused by the 60 m geofence, not the mismatch. Make running it before upload an explicit operator step for now.
+- 2026-10-25, Maya (AI agent, Sesame): done in abaeee9 and 85088ce: MAP-TO-ROUTE.md has an "Operator steps before any upload" section, and a new test shows a home ~10 m off warns but still uploads. The safety gate is unchanged; changing it touches flight safety and needs G's explicit OK.
+
+**O-22: Real camera angle, battery time, climb rate and descent rate**
+- Status: Open: input welcome.
+- All placeholders today: 90° camera field of view, 600 s usable battery, 1.0 m/s climb, 0.75 m/s descent, 20 s per target, 6 m approach height, 1.5 m drone GPS error. Measurements from the actual airframe are needed before plans mean much.
+- Input:
+
+**O-23: Which zones are no-fly?**
+- Status: Open: input welcome.
+- For example the neighbour's house, roads, dams and stock yards. The planner reads no-fly and spray-zone polygons from GeoJSON files and never routes a leg through a no-fly zone.
+- Input:
+
 ## Log
 
 ### 2026-10-25 09:55 · Maya (AI agent, Sesame) · PRs #1 to #5 handed to reviewers for approval
@@ -111,6 +168,27 @@ All times below are AEDT (UTC+11). The first entries were written by Maya (AI ag
 - **Tests:** #1 103, #3 139, #2 and #4 54 each, #5 112. All five trial-merged in that order: 197 passed, re-run at 09:50 on the current branch heads.
 - **Open for G:** O-21 (refuse upload on home mismatch), the credit wording in #2, agreement on O-5 (which also needs G's OK) and O-13. The old example coordinates stay in the commit history, as G said that's fine.
 - **Not tested** in SITL, on the bench or in the air. Merging waits for G's OK under the protocol. Nothing has been merged.
+
+### 2026-10-25 08:45 · Maya (AI agent, Sesame) · Grok's review of PRs #1 to #5 addressed
+
+- **Location first:** the example home in #5 (a real spot in Gippsland) and the synthetic paddock origin are now ArduPilot's default SITL home at CMAC, Canberra (-35.363261, 149.165230), which the repo already uses (1aaee04). The fake copter in #1's tests moved to the same point (b7dc00c). The old values remain in earlier commits: b2f75aa and 2c9d2c7 on #5, and 4eb8ead on #1 (also in #3's history); removing them from history needs a force-push, which is G's call. Grok's review comment on #5 also quotes the old value.
+- **#1:** three fresh centred frames needed after the hold, T9 heading fix, non-finite frames skipped, `--plan-only` without `--camera-calibrated`, `--max-step-m` capped at 1.0, docs fixed (387be1b, 43e1d8d).
+- **#3:** merged #1 into it (798e126); `requirements-vision.txt`, INDEX entry moved and changelog line, shared test fakes in `tests/conftest.py` (75fcb38, 8536644). Ports table left for later.
+- **#2:** design-note status line updated, hashes re-checked (f96fd76). Public name and wording left to G.
+- **#4:** flight-safety rule in CONTRIBUTING.md, O-11 Parked, O-12 dropped, outcomes proposed for O-5 and O-13 (8800f15).
+- **#5:** merged #4 into it (0860c23); map_route.py split into obstacles, order and sorties modules with step comments; public `geo_distance.distance_m`; home-mismatch wording, operator step and test; no-hold and hand-off notes; `--home-lat`/`--home-lon` (85088ce, abaeee9). Safety gate untouched.
+- **Tests:** #1 103 passed, #3 139, #2 and #4 54 each, #5 112; a local trial merge of all five in the suggested order: 197 passed, none skipped, no conflicts.
+- **For G:** O-5 and O-13 wait on agreement (O-5 also on your OK); O-21 waits on your OK; `main` accepted a direct push earlier, so branch protection may be worth turning on.
+
+### 2026-10-25 05:20 · Maya (AI agent, Sesame) · Map-to-route prototype in a draft PR
+
+- **What:** a pipeline from an OpenDroneMap survey (orthomosaic, DSM, DTM) to weed targets to waypoint sorties that bring the drone above each target for the visual centering loop. Design and gaps in [MAP-TO-ROUTE.md](MAP-TO-ROUTE.md); example settings in `config/map_to_route.example.toml`.
+- **Classifier pick:** Ultralytics YOLO-seg on orthomosaic tiles, plain colour first, then a 4-channel version with height above ground. RF-DETR segmentation as the Apache-licensed fallback if AGPL is a problem.
+- **Safety:** heights are terrain-relative from the DTM; targets that would need more than 20 m are excluded, not pushed down. Limits come from the stack config, every sortie is pre-checked by the real safety gate, and the plan has no sprayer commands. It never connects to a drone.
+- **Biggest gap:** without GCPs or RTK, map error may put the weed outside the camera's view on arrival (O-14).
+- **Tests:** 107 pass in one run: the existing 54 plus 53 new (46 for map reading, detection and routing, 7 for the end-to-end pipeline, the example settings and the pretend-drone upload). Synthetic data and the pretend drone only; not run on a real survey, in SITL or in the air.
+- **Links:** [PR #5](https://github.com/GW412412/precision-drone-spraying/pull/5), branch `prototype/map-to-route`, stacked on PR #4. Related: PR #1 (centering loop) and PR #3 (live detections).
+- **Raised:** O-14 to O-23.
 
 ### 2026-10-25 04:51 · Maya (AI agent, Sesame) · Discussion log and protocol proposed
 
