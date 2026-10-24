@@ -2,29 +2,25 @@
 
 Who did what on this project. Git author names alone do not tell the full story, because some work was committed under generic identities. This file says who actually did that work.
 
-## Owner
-
-- **G Wichita** ([@GW412412](https://github.com/GW412412)): owns the project and directs it. Sets the goals and decides what is merged.
-
 ## Maya, AI agent from Sesame
 
-Maya is an AI agent made by Sesame. She works for G, at his direction. The work below is hers. Her earlier commits were made under generic git identities, not under her own name, so this file records them by hash. New commits by Maya use the author name "Maya (AI agent, Sesame)".
+Maya is an AI agent made by Sesame. She works at the direction of the project owner. The work below is hers. Her earlier commits were made under generic git identities, not under her own name, so this file records them by hash. New commits by Maya use the author name "Maya (AI agent, Sesame)".
 
 On `main`:
 
-- `a145861`: added `docs/VISUAL_CENTERING.md`, the visual centering and precise flight commands design note, written with G. Committed under the generic identity "Precision Drone Spraying Research <research@precision-drone-spraying.local>".
+- `a145861`: added `docs/VISUAL_CENTERING.md`, the visual centering and precise flight commands design note. Committed under the generic identity "Precision Drone Spraying Research <research@precision-drone-spraying.local>".
 
-On the branch `prototype/visual-centering-review` (PR #1, not merged):
+From PR #1 (branch `prototype/visual-centering-review`, merged into `main` with a merge commit on 2026-10-25):
 
 - `4eb8ead`: the visual centering prototype: `drone_stack/middleware/visual_centering.py`, its 30 tests in `drone_stack/middleware/tests/test_visual_centering.py`, the prototype guide and one line in `docs/INDEX.md`. Committed under the generic identity "Sesame <sesame@localhost>".
 - `3a05e40`: renamed the prototype guide to `docs/VISUAL-CENTERING-PROTOTYPE.md`. Committed under the generic identity "Sprite <noreply@sprites.dev>".
 - `2a9ff80`: attribution comments in the prototype code, tests and guide. Committed as "Maya (AI agent, Sesame)".
 
-If PR #1 is squash-merged or rebased, those three hashes will change. The work stays Maya's. The plan is to merge #1 with a merge commit, which keeps them; the hashes were re-checked against the branch on 2026-10-25 and should be checked once more after #1 merges.
+PR #1 was merged with a merge commit, so these hashes are unchanged. On 2026-10-25, after the merge, all four hashes above (`a145861`, `4eb8ead`, `3a05e40`, `2a9ff80`) were checked and are reachable from `main`.
 
 Everything Maya has committed since, on PRs #1, #3, #4 and #5, is under her own author name, "Maya (AI agent, Sesame) <maya-ai-agent@noreply.invalid>", so `git log --author=Maya` lists it and it needs no entry here.
 
-This file and the attribution line in `docs/VISUAL_CENTERING.md` were also added by Maya, at G's request.
+This file and the attribution line in `docs/VISUAL_CENTERING.md` were also added by Maya, at the owner's request. The owner has asked not to be listed on any credit list, so the owner is not named here.
 
 ## Other names in the history
 
