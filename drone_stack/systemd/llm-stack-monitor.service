@@ -1,0 +1,15 @@
+# Passive data-flow monitor: logs .tlog + CSV to logs/monitor, JSON/web
+# dashboard on http://127.0.0.1:8766 . Never transmits to the vehicle.
+[Unit]
+Description=LLM stack - MAVLink data-flow monitor
+After=llm-stack-mavproxy.service
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=@ROOT@/drone_stack/.venv/bin/python @ROOT@/drone_stack/middleware/mav_monitor.py --headless --web 8766
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

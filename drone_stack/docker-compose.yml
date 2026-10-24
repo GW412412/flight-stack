@@ -1,4 +1,20 @@
 # docker compose up -d   (agent runtime services; ODM/CVAT added later)
+#
+# Default services (unchanged): ollama :11434 and open-webui :3000.
+#
+# Profile "llm-stack" (opt-in, UNTESTED in Docker - the same processes are
+# tested natively via drone_stack/bringup.sh): MAVProxy hub, MAVLink MCP server,
+# data-flow monitor and mcpo. They use network_mode: host so the UDP fan-out
+# ports (14550/14560/14565) and 127.0.0.1 URLs behave exactly as natively.
+#
+#   SITL:    drone_stack/sitl/run_sitl.sh --daemon            # on the host
+#            docker compose --profile llm-stack up -d --build
+#   Pixhawk: LINK=pixhawk STACK_CONFIG=llm_stack.pixhawk.toml \
+#            docker compose --profile llm-stack up -d --build   (needs /dev/ttyACM0)
+#
+# Do not run this profile and bringup.sh / the systemd units at the same time.
+# If Ollama is installed natively on the host already (setup-local-ai.sh), skip
+# the ollama service: docker compose --profile llm-stack up -d mavproxy mcp-server monitor mcpo
 services:
   ollama:
     image: ollama/ollama:latest
@@ -13,6 +29,48 @@ services:
     environment: ["OLLAMA_BASE_URL=http://ollama:11434"]
     depends_on: [ollama]
     volumes: [webui:/app/backend/data]
+
+  # ---- profile: llm-stack ------------------------------------------------
+  mavproxy:
+    profiles: [llm-stack]
+    build: ./middleware
+    image: drone-llm-stack:latest
+    network_mode: host
+    volumes: ["..:/repo"]
+    environment: ["INTERACTIVE=0"]
+    # Pixhawk over USB: uncomment (and set LINK=pixhawk)
+    # devices: ["/dev/ttyACM0:/dev/ttyACM0"]
+    command: ["drone_stack/mavproxy/start_mavproxy.sh", "${LINK:-sitl}"]
+    restart: on-failure
+
+  mcp-server:
+    profiles: [llm-stack]
+    image: drone-llm-stack:latest
+    network_mode: host
+    volumes: ["..:/repo"]
+    depends_on: [mavproxy]
+    command: ["python", "drone_stack/middleware/mcp_server.py",
+              "--config", "config/${STACK_CONFIG:-llm_stack.sitl.toml}",
+              "--transport", "streamable-http", "--port", "8765"]
+    restart: on-failure
+
+  monitor:
+    profiles: [llm-stack]
+    image: drone-llm-stack:latest
+    network_mode: host
+    volumes: ["..:/repo"]
+    depends_on: [mavproxy]
+    command: ["python", "drone_stack/middleware/mav_monitor.py", "--headless", "--web", "8766"]
+    restart: on-failure
+
+  mcpo:
+    profiles: [llm-stack]
+    image: drone-llm-stack:latest
+    network_mode: host
+    depends_on: [mcp-server]
+    command: ["mcpo", "--host", "127.0.0.1", "--port", "8001",
+              "--server-type", "streamable-http", "--", "http://127.0.0.1:8765/mcp"]
+    restart: on-failure
 
 volumes:
   ollama:

@@ -1,0 +1,16 @@
+# MAVLink MCP server (FlightGate inside) on http://127.0.0.1:8765/mcp.
+# One instance per vehicle link - every LLM client shares it.
+[Unit]
+Description=LLM stack - MAVLink MCP server (@CONFIG@)
+After=llm-stack-mavproxy.service
+Wants=llm-stack-mavproxy.service
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=@ROOT@/drone_stack/.venv/bin/python @ROOT@/drone_stack/middleware/mcp_server.py --config @ROOT@/config/@CONFIG@ --transport streamable-http --port 8765
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

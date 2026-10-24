@@ -1,0 +1,9 @@
+{
+  "_comment": "mcpo config: exposes the running MAVLink MCP server (streamable HTTP on :8765) as an OpenAPI tool server for Open WebUI. Run: mcpo --host 127.0.0.1 --port 8001 --config drone_stack/openwebui/mcpo.json  -> tools at http://127.0.0.1:8001/mavlink-drone (docs: /mavlink-drone/docs). bringup.sh --webui uses the single-server form instead (tools at http://127.0.0.1:8001/).",
+  "mcpServers": {
+    "mavlink-drone": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}

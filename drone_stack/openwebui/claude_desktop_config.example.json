@@ -1,0 +1,17 @@
+{
+  "_comment": "Example for Claude Desktop / any stdio MCP client. Option A (recommended) bridges to the ONE shared HTTP server started by bringup.sh, via the mcp-remote npm package. Option B spawns a private server over stdio; only use it when nothing else (bringup.sh, systemd unit) already listens on UDP 14560. Replace /path/to with the repo path. Remove the option you do not use.",
+  "mcpServers": {
+    "mavlink-drone": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:8765/mcp"]
+    },
+    "mavlink-drone-stdio": {
+      "command": "/path/to/precision-drone-spraying/drone_stack/.venv/bin/python",
+      "args": [
+        "/path/to/precision-drone-spraying/drone_stack/middleware/mcp_server.py",
+        "--config", "/path/to/precision-drone-spraying/config/llm_stack.sitl.toml",
+        "--transport", "stdio"
+      ]
+    }
+  }
+}

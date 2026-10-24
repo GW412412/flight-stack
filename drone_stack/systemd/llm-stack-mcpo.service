@@ -1,0 +1,16 @@
+# Optional: mcpo bridge so Open WebUI can call the MCP tools (OpenAPI on
+# http://127.0.0.1:8001 ; 8000 belongs to /workspace/local-agent).
+[Unit]
+Description=LLM stack - mcpo bridge for Open WebUI
+After=llm-stack-mcp.service
+Wants=llm-stack-mcp.service
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=@ROOT@/drone_stack/.venv/bin/mcpo --host 127.0.0.1 --port 8001 --server-type streamable-http -- http://127.0.0.1:8765/mcp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
