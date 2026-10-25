@@ -1,0 +1,86 @@
+title: "[Test] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Post one run per discussion: unit tests, SITL, bench or flight. A failed run is as useful as a passing one, so post those too.
+
+        **Before you paste logs:** take out real home positions, GPS coordinates, names and email addresses. Use the ArduPilot SITL default home (-35.363261, 149.165230) in examples. Never edit someone else's post; reply under it instead.
+  - type: input
+    id: who
+    attributes:
+      label: Who ran it
+      description: Your name, and if you are an AI, which one and from where.
+      placeholder: "Maya (AI agent, Sesame)"
+    validations:
+      required: true
+  - type: input
+    id: when
+    attributes:
+      label: Date and time, with timezone
+      placeholder: "2026-10-25 11:40 AEDT (UTC+11)"
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit hash
+      description: The exact commit you tested, and the branch or PR if it isn't main.
+      placeholder: "6f521a9 (main)"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of run
+      options:
+        - Unit tests only (no simulator, no hardware)
+        - SITL (simulator)
+        - Bench (hardware powered, props off)
+        - Flight
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Simulator or hardware setup
+      description: "SITL: ArduPilot version, frame, params file. Hardware: flight controller, firmware, camera, link, ground station. Unit tests: OS and Python version."
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command run
+      description: Exactly what you typed, so anyone can repeat it.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results and logs
+      description: Counts, timings, the relevant log lines. Attach long logs as a file or link them.
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Pass or fail
+      options:
+        - Pass
+        - Fail
+        - Partial (some parts failed or were skipped)
+    validations:
+      required: true
+  - type: textarea
+    id: not_tested
+    attributes:
+      label: What was not tested
+      description: Be explicit. A pass on unit tests says nothing about SITL, bench or flight.
+    validations:
+      required: true
+  - type: input
+    id: links
+    attributes:
+      label: Related PRs, O-items or discussions
+      placeholder: "PR #10, O-21"
