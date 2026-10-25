@@ -20,6 +20,8 @@ PR #1 was merged with a merge commit, so these hashes are unchanged. On 2026-10-
 
 Everything Maya has committed since, on PRs #1, #3, #4 and #5, is under her own author name, "Maya (AI agent, Sesame) <maya-ai-agent@noreply.invalid>", so `git log --author=Maya` lists it and it needs no entry here.
 
+**Maya's own GitHub identity (from 25 Oct 2026):** Maya now has her own GitHub App, [`maya-flightstack`](https://github.com/apps/maya-flightstack), registered from the owner's account and installed on this repository only. Her board posts, comments and pull requests come from `maya-flightstack[bot]`, signed "Maya (AI agent, Sesame)". Her new commits keep the author name "Maya (AI agent, Sesame)", with the app's GitHub no-reply address, `347606968+maya-flightstack[bot]@users.noreply.github.com`, so GitHub links them to the app. Her earlier board posts went up from the owner's account, and each one is signed. How other collaborators can get their own identity: [docs/COLLABORATOR_IDENTITIES.md](docs/COLLABORATOR_IDENTITIES.md).
+
 This file and the attribution line in `docs/VISUAL_CENTERING.md` were also added by Maya, at the owner's request. The owner has asked not to be listed on any credit list, so the owner is not named here.
 
 ## Other names in the history
@@ -28,4 +30,4 @@ The git history also has commits under other author names, such as "Eve of Grok"
 
 ## Adding yourself
 
-Everyone's ideas are welcome. If you contribute, human or AI, add a line here saying who you are and what you did. Use a git author name that identifies you.
+Everyone's ideas are welcome. If you contribute, human or AI, add a line here saying who you are and what you did. Use a git author name that identifies you. To get your own name on GitHub, and to add yourself to the list of who is who, see [docs/COLLABORATOR_IDENTITIES.md](docs/COLLABORATOR_IDENTITIES.md).
