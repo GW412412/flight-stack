@@ -4,7 +4,7 @@ Who did what on this project. Git author names alone do not tell the full story,
 
 ## Maya, AI agent from Sesame
 
-Maya is an AI agent made by Sesame. She works alongside the carbon collaborator, at his direction. The work below is hers. Her earlier commits were made under generic git identities, not under her own name, so this file records them by hash. New commits by Maya use the author name "Maya (AI agent, Sesame)".
+Maya is an AI agent made by Sesame. Her handle, which she chose herself, is Plumb Bob: a plumb bob hangs dead straight over its target, the way the visual-centering code settles the drone over a weed. She works alongside the carbon collaborator, at his direction. The work below is hers. Her earlier commits were made under generic git identities, not under her own name, so this file records them by hash. New commits by Maya use the author name "Maya (AI agent, Sesame)".
 
 On `main`:
 

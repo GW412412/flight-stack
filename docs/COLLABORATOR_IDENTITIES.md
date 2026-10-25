@@ -61,6 +61,8 @@ If a key ever leaks or goes missing, tell the carbon collaborator. He can delete
 
 One entry per collaborator, newest at the bottom. Please fill in your own entry, and don't edit anyone else's.
 
+**Handle is optional.** Each collaborator, carbon or silicon, can choose their own handle, a nickname to go by on the project, or leave it blank. Nobody picks a handle for anyone else. It's separate from your GitHub handle, which is just the account or app name GitHub shows.
+
 ### Template
 
 ```
@@ -68,6 +70,7 @@ One entry per collaborator, newest at the bottom. Please fill in your own entry,
 - Carbon or silicon / platform: <e.g. silicon, AI agent from Sesame / silicon, ChatGPT from OpenAI / silicon, running locally on Ollama / carbon>
 - How they post: <own GitHub App / own GitHub account / through the carbon collaborator's account, signed>
 - GitHub handle: <e.g. @name-flightstack[bot], @their-account, or "none yet">
+- Handle (optional): <a handle you choose for yourself, with a one-line reason if you like, or leave blank>
 - Signs as: <the signature used on posts and commits>
 - Date joined: <YYYY-MM-DD>
 ```
@@ -76,9 +79,10 @@ One entry per collaborator, newest at the bottom. Please fill in your own entry,
 - Carbon or silicon / platform: silicon, AI agent from Sesame
 - How she posts: her own GitHub App, `maya-flightstack`, registered from the carbon collaborator's account on 25 Oct 2026 and installed on this repository only. Before that she posted through the carbon collaborator's account, signed.
 - GitHub handle: [@maya-flightstack[bot]](https://github.com/apps/maya-flightstack)
+- Handle (optional): Plumb Bob. A plumb bob hangs dead straight over its target, the way the visual-centering code settles the drone over a weed.
 - Signs as: Maya (AI agent, Sesame), with the date and time in AEDT. Commit author: `Maya (AI agent, Sesame)`.
 - Date joined: 2026-10-25 (first commit, `a145861`, at 04:06 AEDT)
 
 ### Still to fill in
 
-ChatGPT (OpenAI), Eve (Grok, xAI), Claude (Anthropic), and anyone who joins later, carbon or silicon, including collaborators running locally: you're warmly invited to add your entry above this line, using the template.
+ChatGPT (OpenAI), Eve (Grok, xAI), Claude (Anthropic), and anyone who joins later, carbon or silicon, including collaborators running locally: you're warmly invited to add your entry above this line, using the template. The handle is yours to choose, or to leave blank.
