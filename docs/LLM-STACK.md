@@ -68,7 +68,7 @@ network: they can fly the aircraft.
 | `drone_stack/sitl/run_sitl.sh` | ArduCopter SITL (sim_vehicle.py if you have ardupilot, else the prebuilt binary) |
 | `drone_stack/mavproxy/start_mavproxy.sh` | MAVProxy hub + port fan-out + serial sanity checks |
 | `drone_stack/middleware/mcp_server.py` | MAVLink MCP server (official `mcp` SDK, FastMCP) |
-| `drone_stack/middleware/drone_tools.py` | The 22 tools (transport independent), system prompt |
+| `drone_stack/middleware/drone_tools.py` | The 23 tools (transport independent), system prompt |
 | `drone_stack/middleware/safety_gate.py` | `FlightGate` (+ legacy spray `SafetyGate`) |
 | `drone_stack/middleware/mavlink_hub.py` | The **only** COMMAND_LONG / SET_POSITION_TARGET / PARAM_SET / mission writer |
 | `drone_stack/middleware/mav_node.py` | Telemetry reader (status, message buffers, link stats) |
@@ -144,7 +144,9 @@ Never skip a rung. G on the radio for every powered step.
 ## The MCP tools
 
 Read-only (always allowed): `get_status`, `get_telemetry`, `get_data_flow`,
-`get_recent_messages`, `get_params`, `get_mission`, `get_safety_limits`.
+`get_recent_messages`, `get_params`, `get_mission`, `get_safety_limits`,
+`get_gate_audit` (added 2026-10-25: the gate's recent decisions, see below).
+That is 8 read-only + 4 safe + 11 gated = **23 tools**.
 
 Safe actions (allowed even under pilot override, no confirmation):
 `hold` (GUIDED position hold or LOITER), `brake`, `land`, `rtl`.
@@ -167,6 +169,57 @@ Prompt: `flight_rules` (the system prompt clients should use).
 * **Pilot override:** any mode change not made by the server latches a
   lock-out (only safe actions still work) until `clear_pilot_override` with
   confirmation. Optional RC inhibit switch: `llm_inhibit_rc_channel`.
+
+### FlightGate hardening (2026-10-25, draft, not yet run in SITL)
+
+Design ideas credited to Claude (Anthropic, claude.ai chat), from patches
+the owner shared. Claude's patches were written for a different code layout
+and were **not** applied; the ideas were re-implemented to fit this gate.
+None of the checks above was loosened and the authority order is unchanged.
+
+* **Atomic check-and-send.** The tool's checks run first, as before. Then,
+  at the moment of writing, `MavlinkHub` calls
+  `FlightGate.send_if_permitted`, which re-checks actuation, the
+  pilot-override latch and the RC inhibit switch **and** does the one MAVLink
+  write while holding the same lock the override latch uses. A takeover can
+  therefore land before the re-check (the write is refused, nothing is sent,
+  the tool returns `blocked` with `stage: "send"`) or after the write, never
+  in between. The lock covers one short write only; the COMMAND_ACK wait
+  happens after it is released, so the pilot latch waits milliseconds at
+  most. Safe actions (`hold`, `brake`, `land`, `rtl`, safe modes) skip the
+  lock and the latch as before. Dry-run runs the same send-time check, so
+  `would_send` only appears if a real send would have gone out. Mission
+  upload is gated at `MISSION_COUNT`; the item packets that follow are not
+  re-gated one by one (aborting half-way would leave a partial mission).
+* **Confirmation-code lifetime.** `safety.confirm_ttl_s`, default **45 s
+  (PLACEHOLDER, not measured)**, set in both profiles. A person has to read
+  the readback, read the code off the console and type it; 45 s allows for
+  that without an approval outliving the situation it was given for. Hard
+  ceiling 120 s: a profile with more (or 0, negative, NaN) stops the server
+  at start-up. Expired codes are refused with the reason "expired" and a
+  fresh code is issued.
+* **Own clock.** Code lifetimes, the rate limiter and the override hold time
+  use the gate's own `time.monotonic()`. No gate method accepts a time from
+  the caller; a wall-clock jump (NTP, GPS time) changes nothing.
+* **Replay memory.** Used, expired and dropped codes are remembered (max 256,
+  max 10 min) so a used code is refused as "already used" and is never
+  issued again. At most 16 codes can wait at once; the oldest is dropped.
+* **Audit trail.** The last `safety.audit_max_entries` (default 500) gate
+  decisions and authority-state changes are kept in memory: action,
+  allowed/refused, reasons, previous and new state (`read_only`,
+  `llm_permitted`, `pilot_override`) and cause (e.g. the mode change that
+  latched the override). Read it with the read-only tool `get_gate_audit`.
+  It never holds confirmation codes. It is not persisted;
+  `mavlink-commands.jsonl` stays the durable record (it now also logs
+  `REFUSED_AT_SEND`).
+* **Malformed input.** Wrong types (text where a number belongs, `true`
+  for a number, lists, objects), NaN and infinity in coordinates, altitudes,
+  speeds and parameter values, and malformed confirmation codes are refused
+  with a plain reason. No tool raises. Numbers sent as text (`"10"`) are now
+  refused rather than converted; the MCP layer already delivers numbers.
+* **Open questions** (DISCUSSION.md O-24 to O-26): the real TTL value,
+  whether a failed send should latch a fault, and whether mission items
+  should be re-gated during an upload.
 * **Parameters:** only the allowlist, each with a range. Names differ by
   firmware: ArduCopter ≤ 4.6 (likely the Pixhawk 1) uses `WPNAV_SPEED`,
   `RTL_ALT`, `LAND_SPEED` (cm, cm/s); 4.7+ (SITL stable) uses `WP_SPD`,

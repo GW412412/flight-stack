@@ -159,7 +159,33 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - For example the neighbour's house, roads, dams and stock yards. The planner reads no-fly and spray-zone polygons from GeoJSON files and never routes a leg through a no-fly zone.
 - Input:
 
+### Flight gate (from the 25 Oct 11:40 log entry)
+
+**O-24: How long should a confirmation code stay valid?**
+- Status: Open: needs G's explicit OK (flight safety).
+- `safety.confirm_ttl_s` is 45 s in both profiles, a PLACEHOLDER, not measured. The operator has to read the readback, read the code off the console and type it. Too short and codes expire while being typed; too long and an approval can outlive the situation it was given for. Hard ceiling 120 s, checked at start-up.
+- Input:
+
+**O-25: Should a failed MAVLink send latch a fault?**
+- Status: Open: needs G's explicit OK (flight safety).
+- Today a send that raises (link dropped mid-write) is logged in the gate audit and returned as an error, and the LLM may try again. The alternative is to latch the gate read-only until the operator clears it, as a pilot takeover does.
+- Input:
+
+**O-26: Re-check the gate between mission items during an upload?**
+- Status: Open: input welcome.
+- `upload_mission` is gated once, at `MISSION_COUNT`. The item packets that follow are not re-checked one by one, because aborting half-way would leave a partial mission on the flight controller. A takeover during an upload does not stop it, but the mission only flies if the LLM is later allowed to start AUTO.
+- Input:
+
 ## Log
+
+### 2026-10-25 11:40 · Grok Bot (AI agent, project manager) · FlightGate hardening in a draft PR (design credit: Claude)
+
+- **What:** draft PR from `grok/gate-hardening`. The gate now re-checks the pilot-override latch, RC inhibit switch and actuation at the moment of each MAVLink write, under the same lock as the override latch, so a pilot takeover can't slip in between the check and the send. Also: confirmation codes expire (O-24), the gate keeps its own monotonic clock, used codes are remembered and never re-issued (bounded), a bounded in-memory audit trail with a new read-only tool `get_gate_audit` (22 → 23 tools), and malformed tool input is refused cleanly instead of raising. No existing check was loosened and the authority order is unchanged. Details in LLM-STACK.md, "FlightGate hardening".
+- **Credit:** the design ideas are Claude's (Anthropic, claude.ai chat), from patches the owner shared. The patches were written for a different code layout and were not applied; the ideas were re-implemented to fit this gate. Not adopted: caller-supplied time and clock-regression checks, a separate "gate view" object, an authority-generation and request-ID envelope with a locked-at-start state machine, and Claude's attribution and demo patches. The reasons are in the PR.
+- **Tests:** 280 passed (197 before, plus 83 in `tests/test_gate_hardening.py`). Two takeover-race tests were checked by removing the lock: both failed, then passed with the lock back.
+- **SITL smoke test** (ArduCopter SITL prebuilt binary via `run_sitl.sh --daemon`, SITL profile pointed straight at TCP 5760, about 2 minutes, 11:20 to 11:22 AEDT): the gate refused arming until GPS and EKF were ready. Arm with a fresh code: ACCEPTED, vehicle armed, then disarmed. Arm with a code left for 47 s: refused as "expired (codes last 45 s)", a new code issued, vehicle stayed disarmed. Takeoff, flight and the send-time takeover race were not exercised in SITL (the race is covered by unit tests only).
+- **Not tested** on the bench or in the air. Merging waits for review and G's OK.
+- **Raised:** O-24 to O-26.
 
 ### 2026-10-25 10:35 · Maya (AI agent, Sesame) · PR #2 updated and merged with G's OK
 
