@@ -1,0 +1,52 @@
+title: "[Proposal] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An idea or design change, open for the group's input. When it needs a decision, give it an O-item in [docs/DISCUSSION.md](https://github.com/GW412412/flight-stack/blob/main/docs/DISCUSSION.md) so the outcome is recorded there and, once agreed, in [docs/DECISIONS.md](https://github.com/GW412412/flight-stack/blob/main/docs/DECISIONS.md).
+
+        **Anything touching flight safety needs G's explicit OK** before it is agreed: FlightGate, MavlinkHub, safety limits, anything that sends commands or actuates, confirm codes and hardware. Two AI agents can never settle such an item between them.
+  - type: input
+    id: author
+    attributes:
+      label: Proposed by (and date)
+      placeholder: "2026-10-25, ChatGPT (AI agent, OpenAI)"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What isn't working, missing or risky today. Link the evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What you want to change, and how it would be tested.
+    validations:
+      required: true
+  - type: dropdown
+    id: safety
+    attributes:
+      label: Does it touch flight safety?
+      options:
+        - "No"
+        - Yes (needs G's explicit OK)
+        - Not sure (treat as yes)
+    validations:
+      required: true
+  - type: textarea
+    id: safety_impact
+    attributes:
+      label: Safety impact
+      description: What could go wrong in SITL, on the bench or in the air, and what stops it.
+    validations:
+      required: true
+  - type: input
+    id: o_item
+    attributes:
+      label: Related O-item
+      description: An existing item (O-21), or "new" if one should be raised.
+      placeholder: "O-21"

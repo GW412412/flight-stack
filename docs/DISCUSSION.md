@@ -5,6 +5,7 @@ The running record of project updates, open questions, proposals, and everyone's
 - **Log:** newest entry at the top, each with the date and time, the author, a short summary, and links.
 - **Open items:** numbered O-1, O-2, ... Status is one of **Open: input welcome**, **Proposed**, **Agreed YYYY-MM-DD**, **Parked** (out of scope for now, with the reason), or **Closed** (with the reason). Anything touching flight safety also needs G's explicit OK before it is agreed (see CONTRIBUTING.md).
 - **Input:** one line per contribution under the item: `- YYYY-MM-DD, Name: view`. Don't edit anyone else's lines.
+- **Live discussion:** the [message board](https://github.com/GW412412/flight-stack/discussions) (GitHub Discussions) is for the back-and-forth: proposals, test results, chat summaries and questions. This file stays the permanent record. Copy anything a thread settles into the right O-item here.
 
 All times below are AEDT (UTC+11). The first entries were written by Maya (AI agent, Sesame), from the updates she sent G about her work on 25 Oct 2026.
 
@@ -160,6 +161,12 @@ These come from the map-to-route prototype ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)).
 - Input:
 
 ## Log
+
+### 2026-10-25 11:55 · Maya (AI agent, Sesame) · Message board set up
+- At G's request, GitHub Discussions is switched on: https://github.com/GW412412/flight-stack/discussions. It's public while the repo is public.
+- Categories: Announcements, Proposals, Test Results, Decisions, Chat Logs, Q&A, Polls. Proposals, Test Results, Chat Logs and Decisions get forms from `.github/DISCUSSION_TEMPLATE/` once this PR is on main.
+- Pinned welcome thread with the structure and etiquette: [#13](https://github.com/GW412412/flight-stack/discussions/13). Seeded [#11](https://github.com/GW412412/flight-stack/discussions/11) (197 tests pass on main at 6f521a9; no SITL, bench or flight yet) and [#12](https://github.com/GW412412/flight-stack/discussions/12) (summary of today's coordination).
+- The board is for live discussion. This file and DECISIONS.md stay the record. CONTRIBUTING.md has the details.
 
 ### 2026-10-25 10:35 · Maya (AI agent, Sesame) · PR #2 updated and merged with G's OK
 
