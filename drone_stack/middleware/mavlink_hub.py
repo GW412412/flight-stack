@@ -15,8 +15,20 @@ is transmitted from this class, and nowhere else. That gives us:
     backs off (only calming actions remain allowed).
 
 The hub does NOT decide whether an action is allowed - the caller
-(mcp_server.py) asks FlightGate first. The hub just transmits, waits for the
+(drone_tools.py) asks FlightGate first. The hub just transmits, waits for the
 acknowledgement and reports what really happened.
+
+Atomic check-and-send (2026-10-25): between "FlightGate said yes" and "the
+packet left" there used to be a small window in which the pilot could take
+over (the reader thread latches the override) and the LLM's command would
+still go out. Now every vehicle-changing write goes through
+`_gated_transmit`, which asks `FlightGate.send_if_permitted` to re-check pilot
+authority and do the ONE short MAVLink write under the same lock the
+override latch uses. Waiting for the COMMAND_ACK happens AFTER that lock is
+released, so a takeover is never held up by more than one packet write.
+DroneTools tells the hub which action it is performing (and whether it is a
+calming "safe" action) with `with hub.acting_for(action, safe=...)`.
+If the hub has no FlightGate (the legacy tools.py path) nothing changes.
 
 Legacy spray API (request_spray_pulse / force_pump_off / spray_status) is
 kept so drone_stack/middleware/tools.py keeps working; the LLM stack does
@@ -28,12 +40,13 @@ import json
 import os
 import threading
 import time
-from typing import List, Optional, Tuple
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator, List, Optional, Tuple
 
 os.environ.setdefault("MAVLINK20", "1")   # see mav_node.py
 from pymavlink import mavutil  # noqa: E402
 
-from safety_gate import SafetyGate
+from safety_gate import GateRefused, SafetyGate
 
 M = mavutil.mavlink
 MAV_CMD_DO_SPRAYER = 216
@@ -41,6 +54,11 @@ MAV_CMD_DO_SPRAYER = 216
 # SET_POSITION_TARGET_GLOBAL_INT type_mask: use position only (ignore
 # velocity, acceleration, yaw, yaw-rate).
 POSITION_ONLY_MASK = 0b0000_1101_1111_1000   # 3576
+
+
+@contextmanager
+def _null_ctx() -> Iterator[None]:
+    yield
 
 
 def _result_name(result: int) -> str:
@@ -72,6 +90,9 @@ class MavlinkHub:
         self._pump_on = False
         self._last_cmd = None
         self._expected_mode: Optional[Tuple[str, float]] = None
+        # Which DroneTools action the CURRENT thread is executing (see
+        # acting_for). Thread-local so two MCP clients cannot mix them up.
+        self._ctx = threading.local()
         self._log_path = None
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
@@ -97,13 +118,71 @@ class MavlinkHub:
             with open(self._log_path, "a") as fh:
                 fh.write(json.dumps(entry, default=str) + "\n")
 
-    def _send(self, fn_name: str, *args, force: bool = False) -> None:
-        """Transmit one message under the node's send lock (unless dry-run;
-        force=True is only used for read-only requests)."""
-        if self.dry_run and not force:
-            return
-        with self.node.send_lock:
-            getattr(self.conn.mav, fn_name)(*args)
+    # ------------------------------------------------------------ authority
+    @contextmanager
+    def acting_for(self, action: str, *, safe: bool = False) -> Iterator[None]:
+        """Tell the hub which gated action the writes inside this block
+        belong to. DroneTools._act wraps every execute() in this.
+
+        `safe=True` marks calming actions (LOITER/BRAKE/LAND/RTL/hold): their
+        writes are never blocked by the pilot-override latch."""
+        prev = (getattr(self._ctx, "action", None), getattr(self._ctx, "safe", False))
+        self._ctx.action, self._ctx.safe = action, bool(safe)
+        try:
+            yield
+        finally:
+            self._ctx.action, self._ctx.safe = prev
+
+    def _gate_telem(self) -> dict:
+        """Fresh RC channels for the send-time inhibit-switch re-check.
+        Sampled just BEFORE taking the gate lock so the lock is held only for
+        the write itself. Never raises."""
+        try:
+            return self.node.get_telemetry() if hasattr(self.node, "get_telemetry") else {}
+        except Exception:
+            return {}
+
+    def _gated_transmit(self, label: str, transmit: Callable[[], Any]) -> Any:
+        """Run `transmit` (one short write, or a no-op in dry-run) as the
+        final, atomic authority check. Raises GateRefused if the pilot took
+        over since the tool's checks ran; nothing is sent in that case.
+
+        Writes made outside `acting_for` (should not happen on the LLM path)
+        are treated as gated, non-safe actions: fail closed."""
+        if self.flight_gate is None:          # legacy tools.py path: unchanged
+            return transmit()
+        action = getattr(self._ctx, "action", None) or f"hub:{label}"
+        safe = getattr(self._ctx, "safe", False)
+        telem = None if safe else self._gate_telem()
+        try:
+            return self.flight_gate.send_if_permitted(action, transmit, safe=safe,
+                                                      telem=telem)
+        except GateRefused as exc:
+            self._log({"kind": "REFUSED_AT_SEND", "label": label, "action": action,
+                       "reasons": exc.reasons})
+            raise
+
+    def _send(self, fn_name: str, *args, force: bool = False,
+              gated: bool = True) -> None:
+        """Transmit one message under the node's send lock.
+
+        force=True  : read-only request (REQUEST_MESSAGE, PARAM_REQUEST_READ);
+                      sent even in dry-run and not gated (cannot move anything).
+        gated=False : protocol continuation of a write that was already gated
+                      at its commit point (mission items after MISSION_COUNT).
+        otherwise   : the write is the commit point of an action -> it goes
+                      through the FlightGate atomic check (and in dry-run the
+                      check still runs but nothing is transmitted)."""
+        def transmit() -> None:
+            if self.dry_run and not force:
+                return
+            with self.node.send_lock:
+                getattr(self.conn.mav, fn_name)(*args)
+
+        if force or not gated:
+            transmit()
+        else:
+            self._gated_transmit(fn_name, transmit)
 
     # ------------------------------------------------------------ COMMAND_LONG
     def send_command_long(self, command: int, p1: float = 0, p2: float = 0, p3: float = 0,
@@ -124,6 +203,8 @@ class MavlinkHub:
             entry = {"kind": "COMMAND_LONG", "label": label, "command": _cmd_name(command),
                      "params": [p1, p2, p3, p4, p5, p6, p7], "target": f"{sysid}:{compid}"}
             if self.dry_run and not read_only:
+                # Same send-time authority check as a real send, no packet.
+                self._gated_transmit(entry["command"], lambda: None)
                 self._log({**entry, "ack": "DRY_RUN"})
                 return {"ok": True, "dry_run": True, "would_send": entry}
             w = self.node.subscribe(["COMMAND_ACK"], lambda m: m.command == command) \
@@ -162,10 +243,16 @@ class MavlinkHub:
             return {"ok": False, "error": f"unknown mode {mode}", "available": sorted(mapping)}
         # Remember what WE asked for, so the reader does not mistake it for
         # the pilot moving the mode switch.
-        self._expected_mode = (mode, time.time())
-        r = self.send_command_long(M.MAV_CMD_DO_SET_MODE,
-                                   M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mapping[mode],
-                                   label=f"set_mode {mode}")
+        self._expected_mode = (mode, time.monotonic())
+        try:
+            r = self.send_command_long(M.MAV_CMD_DO_SET_MODE,
+                                       M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mapping[mode],
+                                       label=f"set_mode {mode}")
+        except GateRefused:
+            # Nothing was sent, so do not expect this mode: if the PILOT now
+            # selects it, that must still count as a pilot override.
+            self._expected_mode = None
+            raise
         r["requested_mode"] = mode
         return r
 
@@ -223,6 +310,7 @@ class MavlinkHub:
         with self._lock:
             entry = {"kind": "PARAM_SET", "label": "set_param", "name": name, "value": value}
             if self.dry_run:
+                self._gated_transmit("param_set_send", lambda: None)
                 self._log({**entry, "ack": "DRY_RUN"})
                 return {"ok": True, "dry_run": True, "would_send": entry}
             before = self.node.params.get(name)
@@ -263,6 +351,7 @@ class MavlinkHub:
             entry = {"kind": "MISSION_UPLOAD", "label": "upload_mission",
                      "count": len(items), "waypoints": waypoints, "rtl_at_end": rtl_at_end}
             if self.dry_run:
+                self._gated_transmit("mission_count_send", lambda: None)
                 self._log({**entry, "ack": "DRY_RUN"})
                 return {"ok": True, "dry_run": True, "would_upload": len(items)}
             sysid, compid = self._target()
@@ -286,10 +375,14 @@ class MavlinkHub:
                     if seq >= len(items):
                         continue
                     cmd, lat, lon, alt = items[seq]
+                    # Continuation of the upload that was gated at
+                    # MISSION_COUNT above. Not re-gated per item on purpose:
+                    # aborting half-way would leave a partial mission on the
+                    # FC. (Open question in DISCUSSION.md.)
                     self._send("mission_item_int_send", sysid, compid, seq,
                                M.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, cmd,
                                0, 1, 0, 0, 0, 0, int(lat * 1e7), int(lon * 1e7), alt,
-                               M.MAV_MISSION_TYPE_MISSION)
+                               M.MAV_MISSION_TYPE_MISSION, gated=False)
                     sent.add(seq)
             finally:
                 self.node.unsubscribe(w)
@@ -337,7 +430,7 @@ class MavlinkHub:
     def _on_mode_change(self, old: Optional[str], new: str) -> None:
         """Reader-thread callback: was this mode change ours?"""
         exp = self._expected_mode
-        if exp and exp[0] == new and time.time() - exp[1] < 5.0:
+        if exp and exp[0] == new and time.monotonic() - exp[1] < 5.0:
             return                       # we asked for it
         reason = f"mode {old}->{new} not requested by the LLM (RC switch, GCS or FC failsafe)"
         self._log({"kind": "PILOT_OVERRIDE_DETECTED", "label": reason})
@@ -346,9 +439,14 @@ class MavlinkHub:
 
     # ------------------------------------------------------------ legacy spray
     def _send_sprayer(self, start: bool) -> None:
-        self.send_command_long(MAV_CMD_DO_SPRAYER, 1.0 if start else 0.0,
-                               label="sprayer start" if start else "sprayer stop",
-                               wait_ack=False)
+        # Pump OFF is a calming action: never blocked by the pilot-override
+        # latch. Pump ON (legacy path) is gated like any other action when a
+        # FlightGate is attached.
+        ctx = self.acting_for("sprayer_stop", safe=True) if not start else _null_ctx()
+        with ctx:
+            self.send_command_long(MAV_CMD_DO_SPRAYER, 1.0 if start else 0.0,
+                                   label="sprayer start" if start else "sprayer stop",
+                                   wait_ack=False)
         self._pump_on = start
 
     def request_spray_pulse(self, *, conf: float, georeg: float, dose_ml: float,

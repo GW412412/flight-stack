@@ -13,6 +13,9 @@ request_streams = false         # MAVProxy already requests streams
 actuation_enabled = true        # SITL: let the LLM fly
 dry_run = false
 confirm_mode = "echo"           # token returned to the LLM (fine in sim)
+# PLACEHOLDER (not measured): seconds a confirmation code stays valid.
+# Same as the Pixhawk profile so SITL rehearses the real timing. Max 120.
+confirm_ttl_s = 45
 max_alt_m = 30.0
 geofence_radius_m = 150.0
 max_speed_ms = 6.0

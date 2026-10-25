@@ -44,7 +44,7 @@ Then:
 
 1. **Settings → Tools → Manage Tool Servers → +** → URL
    `http://localhost:8001` (or `http://localhost:8001/mavlink-drone` with the
-   config-file form). Leave auth empty. Save; you should see 22 tools.
+   config-file form). Leave auth empty. Save; you should see 23 tools.
    *User* tool servers are called **from your browser**, so `localhost` works
    even when Open WebUI runs in Docker.
    (If you add it as an **admin / global** tool server instead, the call comes

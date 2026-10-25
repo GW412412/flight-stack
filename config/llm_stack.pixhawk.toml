@@ -13,6 +13,10 @@ request_streams = false
 actuation_enabled = false       # read-only until you deliberately flip it
 dry_run = true                  # gate runs, nothing transmitted
 confirm_mode = "operator"       # code shown on the console, not to the LLM
+# PLACEHOLDER (not measured): seconds a confirmation code stays valid. The
+# operator has to read the code off the console and type it; 45 s allows for
+# that without leaving an approval lying around. Max 120 (start-up refuses more).
+confirm_ttl_s = 45
 max_alt_m = 20.0
 min_goto_alt_m = 2.0
 geofence_radius_m = 60.0        # stay well inside line of sight

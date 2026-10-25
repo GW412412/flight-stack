@@ -19,7 +19,7 @@ def tools():
 
 def test_every_tool_registered(tools):
     assert set(tools) == set(ALL_TOOLS)
-    assert len(tools) == 22
+    assert len(tools) == 23
 
 
 def test_read_only_annotations(tools):
@@ -67,7 +67,7 @@ def test_descriptions_present(tools):
 
 def test_ollama_conversion(tools):
     out = mcp_tools_to_ollama(tools.values())
-    assert len(out) == 22
+    assert len(out) == 23
     f = {o["function"]["name"]: o["function"] for o in out}
     assert f["takeoff"]["parameters"]["properties"]["alt_m"]["type"] == "number"
     assert all(o["type"] == "function" for o in out)

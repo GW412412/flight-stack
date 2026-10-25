@@ -116,6 +116,14 @@ def build_server(tools: DroneTools, host: str = "127.0.0.1", port: int = 8765) -
         writable parameters, pilot-override state, pending confirmations."""
         return tools.get_safety_limits()
 
+    @mcp.tool(annotations=READ)
+    def get_gate_audit(limit: int = 50) -> dict:
+        """Read-only. The safety gate's recent decisions, oldest first: which actions
+        were allowed or refused and why, pilot-override latches and clears, and the
+        authority state before/after each. Use it to explain a refusal. Never contains
+        confirmation codes."""
+        return tools.get_gate_audit(limit)
+
     # ------------------------------------------------------------ safe actions
     @mcp.tool(annotations=SAFE)
     def hold() -> dict:

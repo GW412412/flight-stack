@@ -160,7 +160,7 @@ def test_over_mcp_protocol(stack):
     async def go():
         async with create_connected_server_and_client_session(srv._mcp_server) as c:
             listed = await c.list_tools()
-            assert len(listed.tools) == 22
+            assert len(listed.tools) == 23
             st = json.loads(result_to_text(await c.call_tool("get_status", {})))
             assert st["link_ok"]
             r = json.loads(result_to_text(await c.call_tool("arm", {})))
