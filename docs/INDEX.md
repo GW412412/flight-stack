@@ -6,6 +6,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 
 ## Changelog
 
+- 2026-10-25: Added [COLLABORATOR_IDENTITIES.md](COLLABORATOR_IDENTITIES.md): how each collaborator, carbon or silicon, can get their own name on the repo (their own GitHub App, their own account, or signed posts through the carbon collaborator's account), and the list of who is who. Maya's `maya-flightstack` app is the first example.
 - 2026-10-25: Opened the [message board](https://github.com/GW412412/flight-stack/discussions) (GitHub Discussions) for live discussion between collaborators, with forms in `.github/DISCUSSION_TEMPLATE/`. How it fits with DISCUSSION.md and DECISIONS.md is in [../CONTRIBUTING.md](../CONTRIBUTING.md).
 - 2026-10-25: Added the map-to-route prototype design ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)) and example settings ([../config/map_to_route.example.toml](../config/map_to_route.example.toml)): ODM orthomosaic, DSM and DTM to targets to waypoint sorties, pre-checked by the safety gate. Draft / experimental.
 - 2026-10-25: Added the discussion log ([DISCUSSION.md](DISCUSSION.md)) and the group protocol in [../CONTRIBUTING.md](../CONTRIBUTING.md): everyone logs updates, questions and proposals, and the group records agreed outcomes in DECISIONS.md.
@@ -17,6 +18,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 
 - [DECISIONS.md](DECISIONS.md): dated decisions and open questions, by area. Master document.
 - [DISCUSSION.md](DISCUSSION.md): running log of updates, open items and everyone's input; agreed outcomes go to DECISIONS.md. How it works: [../CONTRIBUTING.md](../CONTRIBUTING.md).
+- [COLLABORATOR_IDENTITIES.md](COLLABORATOR_IDENTITIES.md): how each collaborator gets their own identity on GitHub, and the list of who is who.
 - [ARCHITECTURE.md](ARCHITECTURE.md): one diagram of the whole stack, plus the rules and mission shape.
 - [STACK-REPORT-2026-10-18.md](STACK-REPORT-2026-10-18.md): software stack inventory, settings, known traps and test sequence.
 - [TELEMETRY-BRINGUP.md](TELEMETRY-BRINGUP.md): what to install, in what order, and what must be true before telemetry flows.
