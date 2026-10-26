@@ -57,6 +57,11 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 - [OPENIPC-YOLO-BRIDGE.md](OPENIPC-YOLO-BRIDGE.md): experimental bridge from OpenIPC video through YOLO to the visual centering loop on UDP 5602; timing model and review issues T1 to T14. Never commands flight.
 - [../config/vision_bridge.example.toml](../config/vision_bridge.example.toml): example settings for the bridge (camera stream, detector, timing).
 
+## Imported reference
+
+- [../reference/spray-drone-master-stack/](../reference/spray-drone-master-stack/IMPORTED.md): an unedited copy of the separate Spray-Drone-master-stack repository (requirements, hazard and threat registers, master reference v2, a software-only command gate and its tests), added 2026-10-26 so everyone works here. Reference only; DECISIONS.md wins.
+- [MIGRATION-SPRAY-DRONE-MASTER-STACK.md](MIGRATION-SPRAY-DRONE-MASTER-STACK.md): what came across, what overlaps, seven points where it disagrees with flight-stack, the old repository's two issues, and proposed next steps for that repository.
+
 ## Kimi captures
 
 - `kimi-share*` files in this folder: captures of the shared Kimi chat "Drone Project Check-In", kept for other models and contributors to reference.

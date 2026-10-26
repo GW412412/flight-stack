@@ -1,0 +1,18 @@
+# Example template for localhost-only SITL.
+# Review syntax against the installed mavlink-router version before use.
+# Do not replace these loopback endpoints with a real vehicle endpoint here.
+
+[General]
+TcpServerPort = 5760
+ReportStats = True
+
+# Example receiver endpoint. Configure SITL to send MAVLink to this port,
+# or adjust this endpoint to match the SITL launch command.
+[UdpEndpoint sitl_input]
+Mode = Normal
+Address = 127.0.0.1
+Port = 14550
+
+# Add separately named localhost endpoints only after assigning each process
+# a unique receiving port and confirming directionality. Do not blindly copy
+# a QGroundControl or command-gateway port from another setup.
