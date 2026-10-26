@@ -6,6 +6,8 @@ Research notes and example configs for a small agricultural spot-spray multiroto
 
 _Formerly named `precision-drone-spraying`; old links redirect here._
 
+_The separate [Spray-Drone-master-stack](https://github.com/GW412412/Spray-Drone-master-stack) repository has been copied into [reference/spray-drone-master-stack/](reference/spray-drone-master-stack/IMPORTED.md) as reference material. Work here; see [docs/MIGRATION-SPRAY-DRONE-MASTER-STACK.md](docs/MIGRATION-SPRAY-DRONE-MASTER-STACK.md)._
+
 > **Status:** Work in progress, built module by module.  
 > Content is research notes + clearly marked **example** configs — not official vendor recommendations.
 
