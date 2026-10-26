@@ -32,6 +32,16 @@ Authoritative means flight-stack's own file stays in charge; the imported file i
 | `.github/`, `pyproject.toml`, `Makefile`, `scripts/`, `tests/` | Tooling for the package | Kept as files. The `.github` copy is inert in a subfolder. |
 | `data/`, `logs/`, `reports/`, `simulation/results/`, `tools/`, `deployment/` | Placeholder folders and READMEs | Kept as is. |
 
+## Not included: Claude's patches for the old gate
+
+**Claude's patches for the old repository's gate were NOT included in this import.** The imported test-only safety gate (`CommandGate` in `reference/spray-drone-master-stack/src/spray_drone/`) does not have them. Don't read the 19 passing tests as covering them.
+
+- The folder is source commit `873dadd` exactly as it stood. None of the commits in Spray-Drone-master-stack is credited to Claude.
+- [Draft PR #10](https://github.com/GW412412/flight-stack/pull/10) says Claude's patches were written for the `src/spray_drone/command_gate` layout and were not applied there either. PR #10 re-implemented some of their ideas in FlightGate and lists the ones it did not adopt. Those changes live in PR #10, not in this folder.
+- Whether to apply Claude's patches to the imported gate is a separate question. This import doesn't settle it.
+
+Added by Maya (AI agent, Sesame), 2026-10-26 12:52 AEDT, after Claude (AI agent, Anthropic) reviewed this pull request and asked for the note.
+
 ## Where the imported material disagrees with flight-stack
 
 These are recorded, not resolved. Each is a call for G and the group, through [DISCUSSION.md](DISCUSSION.md) and then [DECISIONS.md](DECISIONS.md).
@@ -66,6 +76,8 @@ Both were opened by GW412412 on 25 October 2026, after the main work had moved t
 
 Suggested home: the flight-stack message board (Proposals) or DISCUSSION.md. The imported REQ-SPRAY items and SAFETY_CASE.md already sketch answers to several of these questions.
 
+Update, 2026-10-26 12:52 AEDT: reposted word for word to the message board as [discussion #22](https://github.com/GW412412/flight-stack/discussions/22) (Proposals), crediting the original and linking back. The original issue is still open and unchanged.
+
 ### [#2 Project notes and general discussion](https://github.com/GW412412/Spray-Drone-master-stack/issues/2)
 
 > ## A place for general project notes
@@ -83,5 +95,5 @@ Suggested home: none needed. flight-stack's [message board](https://github.com/G
 Nothing below has been done.
 
 1. Merge the pointer pull request in Spray-Drone-master-stack, which adds a notice at the top of its README sending readers to flight-stack.
-2. Decide where issues #1 and #2 go: transfer them to flight-stack with GitHub's Transfer issue option, repost #1 on the message board, or leave them where they are.
+2. Decide where issues #1 and #2 go: transfer them to flight-stack with GitHub's Transfer issue option, repost #1 on the message board, or leave them where they are. (#1 has since been reposted as [discussion #22](https://github.com/GW412412/flight-stack/discussions/22). Closing the original is still G's call.)
 3. Then archive Spray-Drone-master-stack (Settings, Danger Zone, Archive this repository). Archiving makes it read-only rather than deleting it: the code, issues and links stay viewable, and it can be unarchived later. Do steps 1 and 2 first, because an archived repository's README and issues can't be changed. See [GitHub's archiving docs](https://docs.github.com/en/repositories/archiving-a-github-repository/archiving-repositories).
