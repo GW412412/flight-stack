@@ -127,6 +127,22 @@ class RouteConfig:
     max_map_age_days: Optional[float] = 14.0
     two_opt_max_passes: int = 50
 
+    def __post_init__(self):
+        # Issue #29: the leg check reads a box of +/- leg_corridor_half_width_m
+        # around a sample every leg_sample_step_m. A step longer than the box
+        # (2 x half width) leaves gaps where an obstacle is never read; a zero
+        # or negative step collapses the walk to the two end points. Refuse
+        # such settings here so neither Python nor the [route] TOML can set them.
+        half, step = self.leg_corridor_half_width_m, self.leg_sample_step_m
+        for name, v in (("leg_corridor_half_width_m", half), ("leg_sample_step_m", step)):
+            if not (isinstance(v, (int, float)) and math.isfinite(v) and v > 0):
+                raise ValueError(f"RouteConfig.{name} must be a finite number > 0, got {v!r}")
+        if step > 2.0 * half:
+            raise ValueError(
+                f"RouteConfig.leg_sample_step_m ({step}) must be <= 2 x "
+                f"leg_corridor_half_width_m ({2.0 * half}), or obstacles between "
+                f"samples are never checked")
+
 
 @dataclass
 class PlannedTarget:
