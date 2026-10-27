@@ -88,7 +88,7 @@ class SafetyConfig:
     #            MCP server console + logs/confirmations.jsonl (and shown by the
     #            monitor). A human has to read it out / type it in chat.
     #            Recommended on the real Pixhawk.
-    confirm_mode: str = "echo"
+    confirm_mode: str = "operator"
     # How long a confirmation code stays valid, in seconds (gate's monotonic
     # clock). PLACEHOLDER: 45 s is a guess, not a measurement - long enough
     # for a person to read the readback, read the code off the console and

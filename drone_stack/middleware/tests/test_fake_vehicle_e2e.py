@@ -52,7 +52,7 @@ def stack(tmp_path):
     fv = FakeVehicle(out=f"127.0.0.1:{port}").start()
     cfg = SafetyConfig(actuation_enabled=True, dry_run=False, require_rc_link=True,
                        min_action_interval_s=0, max_actions_per_minute=1000,
-                       geofence_radius_m=150, max_alt_m=30)
+                       geofence_radius_m=150, max_alt_m=30, confirm_mode="echo")
     gate = FlightGate(cfg)
     hub = MavlinkHub(node, flight_gate=gate, dry_run=False, log_dir=str(tmp_path))
     tools = DroneTools(node, hub, gate, log_dir=str(tmp_path), home_poll_s=0.5)

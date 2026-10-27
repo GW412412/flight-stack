@@ -48,7 +48,7 @@ class Clock:
 def cfg(**kw):
     base = dict(actuation_enabled=True, max_alt_m=30, geofence_radius_m=150,
                 max_speed_ms=6, require_rc_link=True, min_action_interval_s=0,
-                max_actions_per_minute=1000)
+                max_actions_per_minute=1000, confirm_mode="echo")
     base.update(kw)
     return SafetyConfig(**base)
 
@@ -309,6 +309,10 @@ def test_invalid_ttl_refused_at_startup(bad):
 def test_ttl_cap_accepts_cap_and_default_is_placeholder_value():
     assert validate_confirm_ttl(MAX_CONFIRM_TTL_S) == MAX_CONFIRM_TTL_S
     assert SafetyConfig().confirm_ttl_s == safety_gate.DEFAULT_CONFIRM_TTL_S == 45.0
+
+
+def test_confirm_mode_defaults_to_operator_so_model_cannot_self_confirm():
+    assert SafetyConfig().confirm_mode == "operator"
 
 
 def test_shipped_profiles_set_a_ttl_within_cap():
