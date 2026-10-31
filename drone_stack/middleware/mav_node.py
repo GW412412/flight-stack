@@ -57,6 +57,14 @@ EKF_FLAG_NAMES = {
 # What Guided/Loiter needs from the EKF before we let the LLM move the drone.
 EKF_POSITION_OK = 1 | 2 | 4 | 16 | 32
 
+# Per-message freshness. A live HEARTBEAT only proves the autopilot is up, not
+# that position/attitude/battery are still arriving (a stream can die alone).
+STREAM_OF_MSG = {
+    "GLOBAL_POSITION_INT": "position", "ATTITUDE": "attitude", "SYS_STATUS": "sys_status",
+    "GPS_RAW_INT": "gps", "EKF_STATUS_REPORT": "ekf", "EXTENDED_SYS_STATE": "landed",
+}
+LANDED_STATE_NAMES = {0: "UNDEFINED", 1: "ON_GROUND", 2: "IN_AIR", 3: "TAKEOFF", 4: "LANDING"}
+
 RC_RECEIVER_BIT = M.MAV_SYS_STATUS_SENSOR_RC_RECEIVER  # 0x10000
 
 
@@ -85,7 +93,8 @@ class MavNode:
                  source_system: int = 250, source_component: int = 191,
                  send_heartbeat: bool = False, request_streams: bool = False,
                  stream_rate_hz: int = 4, recent_buffer: int = 500,
-                 heartbeat_timeout_s: float = 3.0, conn=None):
+                 heartbeat_timeout_s: float = 3.0, conn=None,
+                 expected_sysid: Optional[int] = None):
         """`connection` is any pymavlink URL: udpin:HOST:PORT (listen for
         MAVProxy --out), tcp:127.0.0.1:5760 (SITL direct), /dev/ttyACM0 (FC
         direct, only if nothing else owns the port). `conn` lets tests inject
@@ -101,10 +110,13 @@ class MavNode:
         self.request_streams = request_streams
         self.stream_rate_hz = stream_rate_hz
         self.heartbeat_timeout_s = heartbeat_timeout_s
+        # 0/None = pin the first autopilot heartbeat; otherwise only that sysid.
+        self.expected_sysid = expected_sysid or None
 
         # Legacy flat state (tools.py / SafetyGate.can_arm read these keys).
         self.state = {
             "messages": [],           # last STATUSTEXT strings (bounded below)
+            "battery": None,          # None = unknown (never a made-up number)
             "rc_link_ok": None,
             "video_trusted": None,
             "live_id_enabled": None,
@@ -130,6 +142,7 @@ class MavNode:
         self._threads: List[threading.Thread] = []
         self._csv = None
         self._last_hb: Optional[float] = None
+        self._seen: dict = {}          # stream name -> time.monotonic() of last message
         self.vehicle_sysid: Optional[int] = None
         self.vehicle_compid: Optional[int] = None
         self.vehicle_type: Optional[int] = None
@@ -204,11 +217,17 @@ class MavNode:
                 self._handle(msg)
             except Exception as exc:   # never let one odd packet kill the reader
                 self.state["last_handler_error"] = f"{msg.get_type()}: {exc}"
-            self._dispatch_waiters(msg)
+            if self._from_vehicle(msg):         # ACKs etc. only from the pinned FC
+                self._dispatch_waiters(msg)
 
     def _from_vehicle(self, msg) -> bool:
-        """True if the packet comes from the autopilot we are flying."""
-        return self.vehicle_sysid is None or msg.get_srcSystem() == self.vehicle_sysid
+        """True only if the packet comes from the pinned autopilot (sysid AND
+        compid). Until the first autopilot heartbeat pins them nothing is
+        adopted, so another system on the link cannot feed us state first."""
+        if self.vehicle_sysid is None:
+            return False
+        return (msg.get_srcSystem() == self.vehicle_sysid
+                and msg.get_srcComponent() == self.vehicle_compid)
 
     def _handle(self, msg):
         t = msg.get_type()
@@ -223,6 +242,8 @@ class MavNode:
             if msg.type == M.MAV_TYPE_GCS or msg.autopilot == M.MAV_AUTOPILOT_INVALID:
                 return
             if self.vehicle_sysid is None:
+                if self.expected_sysid and msg.get_srcSystem() != self.expected_sysid:
+                    return                      # configured sysid: never pin another
                 self.vehicle_sysid = msg.get_srcSystem()
                 self.vehicle_compid = msg.get_srcComponent()
                 # pymavlink uses target_system for mode_mapping() etc.
@@ -247,6 +268,8 @@ class MavNode:
             return
         if not self._from_vehicle(msg):
             return
+        if t in STREAM_OF_MSG:
+            self._seen[STREAM_OF_MSG[t]] = time.monotonic()
         if t == "GLOBAL_POSITION_INT":
             self.state.update(lat=msg.lat / 1e7, lon=msg.lon / 1e7, alt=msg.alt / 1e3,
                               rel_alt=msg.relative_alt / 1e3, heading=msg.hdg / 100.0)
@@ -260,10 +283,11 @@ class MavNode:
                 "pitch_deg": round(math.degrees(msg.pitch), 2),
                 "yaw_deg": round(math.degrees(msg.yaw), 2)}
         elif t == "SYS_STATUS":
-            self.state.update(battery=msg.battery_remaining,
-                              voltage=msg.voltage_battery / 1000.0)
+            # battery_remaining -1 = FC does not know -> None, never a number.
+            pct = msg.battery_remaining if 0 <= msg.battery_remaining <= 100 else None
+            self.state.update(battery=pct, voltage=msg.voltage_battery / 1000.0)
             self.telem["battery"] = {
-                "remaining_pct": msg.battery_remaining,
+                "remaining_pct": pct,
                 "voltage_v": msg.voltage_battery / 1000.0,
                 "current_a": msg.current_battery / 100.0 if msg.current_battery >= 0 else None}
             # RC receiver health as reported by the FC itself (most reliable
@@ -275,6 +299,8 @@ class MavNode:
             self.telem["gps"] = {"fix_type": msg.fix_type,
                                  "satellites": msg.satellites_visible,
                                  "hdop": msg.eph / 100.0 if msg.eph != 65535 else None}
+        elif t == "EXTENDED_SYS_STATE":
+            self.state["landed_state"] = msg.landed_state
         elif t == "VFR_HUD":
             self.telem["vfr_hud"] = {"groundspeed_ms": round(msg.groundspeed, 2),
                                      "airspeed_ms": round(msg.airspeed, 2),
@@ -318,7 +344,7 @@ class MavNode:
             self._csv.write(
                 f"{now},{t},{self.state.get('lat','')},{self.state.get('lon','')},"
                 f"{self.state.get('rel_alt','')},{self.state.get('heading','')},"
-                f"{self.state.get('battery','')}\n")
+                f"{'' if self.state.get('battery') is None else self.state['battery']}\n")
             self._csv.flush()
 
     # ------------------------------------------------------------ waiters
@@ -360,6 +386,13 @@ class MavNode:
     def heartbeat_age(self) -> Optional[float]:
         return None if self._last_hb is None else time.time() - self._last_hb
 
+    def msg_ages(self) -> dict:
+        """Seconds since the last position/attitude/sys_status/gps/ekf/landed
+        message from the pinned vehicle (None = never received)."""
+        now = time.monotonic()
+        return {name: (round(now - self._seen[name], 2) if name in self._seen else None)
+                for name in STREAM_OF_MSG.values()}
+
     def home(self) -> Optional[dict]:
         return self.telem.get("home")
 
@@ -370,6 +403,12 @@ class MavNode:
         if self._last_hb:
             s["heartbeat_age_s"] = round(time.time() - self._last_hb, 2)
         s["link_ok"] = self.link_ok()
+        ages = self.msg_ages()
+        s["msg_age_s"] = ages
+        # landed state is only reported while its own message is fresh
+        ls = s.pop("landed_state", None)
+        fresh = ages["landed"] is not None and ages["landed"] <= self.heartbeat_timeout_s
+        s["landed_state"] = LANDED_STATE_NAMES.get(ls) if (fresh and ls is not None) else None
         s["vehicle_sysid"] = self.vehicle_sysid
         h = self.home()
         if h and s.get("lat") is not None:

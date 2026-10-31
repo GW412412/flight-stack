@@ -8,7 +8,11 @@ is transmitted from this class, and nowhere else. That gives us:
   * one audit log  -> logs/mavlink-commands.jsonl (one JSON line per write,
                       with the COMMAND_ACK result), per INTEGRATION.md §8
   * one dry-run switch (gate checks run, nothing is transmitted)
-  * one lock, so two tool calls can never interleave a mission upload
+  * one transaction lock, so two tool calls can never interleave a mission
+    upload / download / parameter write. It is NEVER held while waiting for a
+    COMMAND_ACK, and single commands (set_mode, arm, takeoff, goto, speed,
+    sprayer stop) do not take it at all, so LAND / RTL / hold are never queued
+    behind a slow ACK or an upload.
   * pilot-override detection: the hub knows which mode IT asked for, so any
     other mode change must have come from the pilot's RC switch, QGC, or a
     flight-controller failsafe -> the FlightGate latch is set and the LLM
@@ -68,7 +72,8 @@ class MavlinkHub:
         self.flight_gate = flight_gate            # FlightGate (pilot-override latch)
         self.dry_run = dry_run
         self.ack_timeout_s = ack_timeout_s
-        self._lock = threading.RLock()
+        self._lock = threading.RLock()        # multi-step transactions only (see above)
+        self._log_lock = threading.Lock()
         self._pump_on = False
         self._last_cmd = None
         self._expected_mode: Optional[Tuple[str, float]] = None
@@ -92,10 +97,11 @@ class MavlinkHub:
 
     def _log(self, entry: dict) -> None:
         entry = {"t": round(time.time(), 3), "dry_run": self.dry_run, **entry}
-        self._last_cmd = entry
-        if self._log_path:
-            with open(self._log_path, "a") as fh:
-                fh.write(json.dumps(entry, default=str) + "\n")
+        with self._log_lock:
+            self._last_cmd = entry
+            if self._log_path:
+                with open(self._log_path, "a") as fh:
+                    fh.write(json.dumps(entry, default=str) + "\n")
 
     def _send(self, fn_name: str, *args, force: bool = False) -> None:
         """Transmit one message under the node's send lock (unless dry-run;
@@ -119,33 +125,35 @@ class MavlinkHub:
         read_only=True marks pure requests (MAV_CMD_REQUEST_MESSAGE) that
         cannot move anything; they are transmitted even in dry-run so the
         dry-run server still sees home position etc."""
-        with self._lock:
-            sysid, compid = self._target()
-            entry = {"kind": "COMMAND_LONG", "label": label, "command": _cmd_name(command),
-                     "params": [p1, p2, p3, p4, p5, p6, p7], "target": f"{sysid}:{compid}"}
-            if self.dry_run and not read_only:
-                self._log({**entry, "ack": "DRY_RUN"})
-                return {"ok": True, "dry_run": True, "would_send": entry}
-            w = self.node.subscribe(["COMMAND_ACK"], lambda m: m.command == command) \
-                if wait_ack else None
-            try:
-                self._send("command_long_send", sysid, compid, command, 0,
-                           p1, p2, p3, p4, p5, p6, p7, force=read_only)
-                ack = self.node.wait(w, timeout or self.ack_timeout_s) if w else None
-            finally:
-                if w:
-                    self.node.unsubscribe(w)
-            if not wait_ack:
-                self._log({**entry, "ack": "NOT_REQUESTED"})
-                return {"ok": True, "sent": entry["command"]}
-            if ack is None:
-                self._log({**entry, "ack": "TIMEOUT"})
-                return {"ok": False, "ack": "TIMEOUT", "command": entry["command"],
-                        "note": "no COMMAND_ACK - check link; command may or may not have run"}
-            res = _result_name(ack.result)
-            self._log({**entry, "ack": res})
-            return {"ok": res in ("ACCEPTED", "IN_PROGRESS"), "ack": res,
-                    "command": entry["command"]}
+        # No hub lock here: the ACK wait can take seconds and must not delay a
+        # LAND/RTL issued from another thread. node.send_lock (inside _send)
+        # serialises the actual socket write; each call has its own waiter.
+        sysid, compid = self._target()
+        entry = {"kind": "COMMAND_LONG", "label": label, "command": _cmd_name(command),
+                 "params": [p1, p2, p3, p4, p5, p6, p7], "target": f"{sysid}:{compid}"}
+        if self.dry_run and not read_only:
+            self._log({**entry, "ack": "DRY_RUN"})
+            return {"ok": True, "dry_run": True, "would_send": entry}
+        w = self.node.subscribe(["COMMAND_ACK"], lambda m: m.command == command) \
+            if wait_ack else None
+        try:
+            self._send("command_long_send", sysid, compid, command, 0,
+                       p1, p2, p3, p4, p5, p6, p7, force=read_only)
+            ack = self.node.wait(w, timeout or self.ack_timeout_s) if w else None
+        finally:
+            if w:
+                self.node.unsubscribe(w)
+        if not wait_ack:
+            self._log({**entry, "ack": "NOT_REQUESTED"})
+            return {"ok": True, "sent": entry["command"]}
+        if ack is None:
+            self._log({**entry, "ack": "TIMEOUT"})
+            return {"ok": False, "ack": "TIMEOUT", "command": entry["command"],
+                    "note": "no COMMAND_ACK - check link; command may or may not have run"}
+        res = _result_name(ack.result)
+        self._log({**entry, "ack": res})
+        return {"ok": res in ("ACCEPTED", "IN_PROGRESS"), "ack": res,
+                "command": entry["command"]}
 
     def request_message(self, msg_id: int) -> dict:
         """MAV_CMD_REQUEST_MESSAGE (read-only, e.g. HOME_POSITION=242)."""
@@ -189,16 +197,17 @@ class MavlinkHub:
 
         SET_POSITION_TARGET_GLOBAL_INT has no ACK; success is judged by the
         caller watching the position (see mcp_server.goto)."""
-        with self._lock:
-            sysid, compid = self._target()
-            entry = {"kind": "SET_POSITION_TARGET_GLOBAL_INT", "label": "goto",
-                     "lat": lat, "lon": lon, "alt_m": alt_m, "target": f"{sysid}:{compid}"}
-            self._send("set_position_target_global_int_send", 0, sysid, compid,
-                       M.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, POSITION_ONLY_MASK,
-                       int(lat * 1e7), int(lon * 1e7), float(alt_m),
-                       0, 0, 0, 0, 0, 0, 0, 0)
-            self._log({**entry, "ack": "NO_ACK_FOR_THIS_MESSAGE"})
-            return {"ok": True, "dry_run": self.dry_run, "sent": entry}
+        # Single write, no ACK to wait for, no transaction lock: `hold` uses this
+        # and must not queue behind a mission upload.
+        sysid, compid = self._target()
+        entry = {"kind": "SET_POSITION_TARGET_GLOBAL_INT", "label": "goto",
+                 "lat": lat, "lon": lon, "alt_m": alt_m, "target": f"{sysid}:{compid}"}
+        self._send("set_position_target_global_int_send", 0, sysid, compid,
+                   M.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, POSITION_ONLY_MASK,
+                   int(lat * 1e7), int(lon * 1e7), float(alt_m),
+                   0, 0, 0, 0, 0, 0, 0, 0)
+        self._log({**entry, "ack": "NO_ACK_FOR_THIS_MESSAGE"})
+        return {"ok": True, "dry_run": self.dry_run, "sent": entry}
 
     # ------------------------------------------------------------ parameters
     def get_param(self, name: str, timeout: float = 3.0) -> dict:
@@ -356,12 +365,21 @@ class MavlinkHub:
                             video_trusted: bool = True, live_id_enabled: bool = True,
                             on_time_s: float = 0.1) -> dict:
         """Legacy spray arbiter: gate check then brief DO_SPRAYER start/stop
-        pulse. Not exposed to the LLM stack (spraying is out of scope)."""
+        pulse. Not exposed to the LLM stack (spraying is out of scope).
+
+        Audit: every DO_SPRAYER command is logged by send_command_long, and each
+        request also writes a SPRAY_DECISION line (allowed, or blocked + reasons).
+        This gate is for the AUTOMATED path only. The pilot's manual fire button
+        does not go through here, and FlightGate never blocks it."""
         with self._lock:
             status = self.node.get_status()
             verdict = self.gate.can_spray(status, zone_bounds=zone_bounds, conf=conf,
                                           georeg=georeg, video_trusted=video_trusted,
                                           live_id_enabled=live_id_enabled)
+            decision = {"kind": "SPRAY_DECISION", "label": "spray_pulse",
+                        "allowed": verdict.allowed, "reasons": list(verdict.reasons),
+                        "conf": conf, "georeg": georeg, "dose_ml": dose_ml}
+            self._log(decision)
             if not verdict.allowed:
                 self._send_sprayer(False)
                 return {"ok": False, "pump": "off", "blockers": verdict.reasons,
@@ -375,9 +393,8 @@ class MavlinkHub:
 
     def force_pump_off(self, reason: str = "fail-closed") -> dict:
         """Always allowed: stop sprayer. Call on video loss / gate fault."""
-        with self._lock:
-            self._send_sprayer(False)
-            return {"ok": True, "pump": "off", "reason": reason}
+        self._send_sprayer(False)             # no lock: pump-off is never queued
+        return {"ok": True, "pump": "off", "reason": reason}
 
     def spray_status(self) -> dict:
         return {"pump_on": self._pump_on, "last_cmd": self._last_cmd,

@@ -14,7 +14,7 @@ pytest.importorskip("pyproj")
 from map_detect import (ColourBlobDetector, PixelDetection, ScriptedDetector,  # noqa: E402
                         UltralyticsSegAdapter, polygon_area_centroid)
 from map_rasters import MapError, MapGeo, OdmMap, OdmPaths  # noqa: E402
-from map_synth import BASE_ELEV, ORTHO_RES, SIZE_M, build_scene  # noqa: E402
+from map_synth import ORTHO_RES, SIZE_M, build_scene  # noqa: E402
 from map_tiles import Tile, iter_tiles, tile_grid  # noqa: E402
 
 

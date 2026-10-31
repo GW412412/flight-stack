@@ -6,6 +6,9 @@ Two gates live here:
   INTEGRATION: conf >= 0.50, georeg >= 0.70, RC link present, video trusted,
   fail-closed pump off). Unchanged in spirit; spraying is out of scope for the
   LLM stack and nothing in the MCP server calls `can_spray`.
+  `can_spray` gates the AUTOMATED pulse path only. The pilot's manual fire
+  button is never routed through SafetyGate or FlightGate and must not be:
+  FlightGate has no spray action and no check here may inhibit it.
 
 * `FlightGate`  - the "LLM behind the sticks" gate. Every action tool in
   mcp_server.py calls one `FlightGate.check_*` method BEFORE the hub may
@@ -47,6 +50,16 @@ class Verdict:
     reasons: list = field(default_factory=list)
 
 
+def battery_unknown(batt: Any) -> bool:
+    """True when the battery level is not a usable 0..100 number.
+
+    The FC reports -1 for 'unknown' and the node stores that as None. Unknown
+    is NOT 'full': every commanding check treats it as not OK."""
+    if isinstance(batt, bool) or not isinstance(batt, (int, float)):
+        return True
+    return math.isnan(batt) or not (0 <= batt <= 100)
+
+
 def _in_bounds(lat: float, lon: float, zone_bounds: Tuple[float, float, float, float]) -> bool:
     minlat, minlon, maxlat, maxlon = zone_bounds
     return minlat <= lat <= maxlat and minlon <= lon <= maxlon
@@ -57,10 +70,12 @@ class SafetyGate:
         reasons = []
         if "mode" not in status and "armed" not in status:
             reasons.append("no telemetry: link down")
-        batt = status.get("battery", 101)
-        if batt is not None and 0 <= batt < 30:   # -1 = FC does not know
-            reasons.append(f"battery {status.get('battery')}% < 30%")
-        fix = status.get("fix_type", 0)
+        batt = status.get("battery")
+        if battery_unknown(batt):                 # None / -1 = FC does not know
+            reasons.append("battery level unknown")
+        elif batt < 30:
+            reasons.append(f"battery {batt}% < 30%")
+        fix = status.get("fix_type") or 0
         if fix < 3:
             reasons.append(f"GPS fix type {fix} < 3 (3D)")
         if status.get("mode", "").upper() in ("AUTO", "RTL", "LAND"):
@@ -84,13 +99,19 @@ class SafetyGate:
         reasons = []
         if not status.get("armed"):
             reasons.append("aircraft not armed")
-        fix = status.get("fix_type", 0)
+        fix = status.get("fix_type") or 0
         if fix < 6:
             reasons.append(f"GPS fix type {fix}: RTK fixed (6) required to spray")
-        if status.get("rel_alt", 999) > 30:
-            reasons.append(f"altitude {status.get('rel_alt')}m > 30m spray ceiling")
-        if status.get("battery", 101) < 20:
-            reasons.append(f"battery {status.get('battery')}% < 20% RTL reserve")
+        alt = status.get("rel_alt")
+        if not isinstance(alt, (int, float)) or math.isnan(alt):
+            reasons.append("altitude unknown - fail closed")
+        elif alt > 30:
+            reasons.append(f"altitude {alt}m > 30m spray ceiling")
+        batt = status.get("battery")
+        if battery_unknown(batt):
+            reasons.append("battery level unknown - fail closed")
+        elif batt < 20:
+            reasons.append(f"battery {batt}% < 20% RTL reserve")
 
         # RC link (ELRS hard authority path must be healthy) — fail closed if unknown
         if status.get("rc_link_ok") is not True:
@@ -304,6 +325,44 @@ class FlightGate:
         chans = (telem.get("rc") or {}).get("channels") or []
         return len(chans) >= ch and chans[ch - 1] > self.cfg.llm_inhibit_pwm_above
 
+    # ------------------------------------------------------------ freshness
+    BASE_STREAMS = ("position", "attitude", "sys_status")
+
+    def stale_streams(self, status: dict, names) -> List[str]:
+        """Streams in `names` that are missing or older than telemetry_max_age_s.
+        A status with no age table at all counts as everything stale."""
+        ages = status.get("msg_age_s")
+        if not isinstance(ages, dict):
+            return list(names)
+        limit = self.cfg.telemetry_max_age_s
+        return [n for n in names
+                if not isinstance(ages.get(n), (int, float)) or ages[n] > limit]
+
+    # ------------------------------------------------------------ nav readiness
+    # Actions that make the aircraft navigate on GPS/EKF. They need a 3D fix, a
+    # healthy EKF position estimate and a known battery, all fresh.
+    NAV_ACTIONS = ("goto", "takeoff", "upload_mission", "start_mission")
+
+    def nav_ready_reasons(self, status: dict, telem: Optional[dict]) -> List[str]:
+        reasons = []
+        need = max(3, int(self.cfg.require_gps_fix))
+        fix = status.get("fix_type")
+        fix = fix if isinstance(fix, int) and not isinstance(fix, bool) else 0
+        if fix < need:
+            reasons.append(f"GPS fix {fix} < {need} (3D fix required for navigation)")
+        stale = self.stale_streams(status, ("gps", "ekf"))
+        if stale:
+            reasons.append(f"navigation data stale: no fresh {', '.join(stale)} message "
+                           f"(<= {self.cfg.telemetry_max_age_s:g} s)")
+        ekf = (telem or {}).get("ekf")
+        if not ekf:
+            reasons.append("EKF status unknown (no EKF_STATUS_REPORT): refusing to navigate")
+        elif not ekf.get("position_ok"):
+            reasons.append(f"EKF position not healthy ({ekf.get('flag_names')})")
+        if battery_unknown(status.get("battery")):
+            reasons.append("battery level unknown: refusing to navigate")
+        return reasons
+
     # ------------------------------------------------------------ common checks
     def check_common(self, action: str, status: dict, telem: Optional[dict] = None,
                      *, safe: bool = False) -> Verdict:
@@ -311,11 +370,19 @@ class FlightGate:
         reasons = []
         if not self.cfg.actuation_enabled:
             reasons.append("actuation disabled (read-only server): set "
-                           "safety.actuation_enabled=true or DRONE_ACTUATION=1")
+                           "safety.actuation_enabled=true (hardware profiles: in the "
+                           "TOML only; sitl: or DRONE_ACTUATION=1)")
         if not status.get("link_ok"):
             reasons.append(f"telemetry link down/stale (heartbeat age "
                            f"{status.get('heartbeat_age_s')})")
         if not safe:
+            stale = self.stale_streams(status, self.BASE_STREAMS)
+            if stale:
+                reasons.append(f"telemetry stale: no fresh {', '.join(stale)} message "
+                               f"(<= {self.cfg.telemetry_max_age_s:g} s); a heartbeat alone "
+                               "is not enough to command the aircraft")
+            if action in self.NAV_ACTIONS:
+                reasons += self.nav_ready_reasons(status, telem)
             o = self.pilot_override()
             if o:
                 reasons.append(f"pilot override active ({o['reason']}): the pilot has the "
@@ -349,7 +416,9 @@ class FlightGate:
         if fix < self.cfg.require_gps_fix:
             reasons.append(f"GPS fix {fix} < required {self.cfg.require_gps_fix}")
         batt = status.get("battery")
-        if batt is not None and 0 <= batt < self.cfg.min_battery_pct:
+        if battery_unknown(batt):
+            reasons.append("battery level unknown (FC reports none): refusing to arm")
+        elif batt < self.cfg.min_battery_pct:
             reasons.append(f"battery {batt}% < {self.cfg.min_battery_pct}%")
         if self.cfg.require_rc_link and status.get("rc_link_ok") is not True:
             reasons.append("RC/ELRS link not confirmed - the pilot must have the radio up "
@@ -368,9 +437,20 @@ class FlightGate:
         if not status.get("armed"):
             reasons.append("already disarmed")
         alt = status.get("rel_alt")
-        if alt is not None and alt > 1.0:
+        landed = status.get("landed_state")
+        alt_known = isinstance(alt, (int, float)) and not math.isnan(alt) \
+            and not self.stale_streams(status, ("position",))
+        if not alt_known:
+            # Unknown altitude is not "on the ground": only a fresh landed-state
+            # report of ON_GROUND lets a disarm through.
+            if landed != "ON_GROUND":
+                reasons.append("altitude unknown or stale and landed state not confirmed "
+                               f"(landed_state={landed}): refusing to disarm - use land")
+        elif alt > 1.0:
             reasons.append(f"airborne (rel_alt {alt:.1f} m): disarm would drop the "
                            "aircraft - use land instead")
+        elif landed in ("IN_AIR", "TAKEOFF", "LANDING"):
+            reasons.append(f"FC reports landed_state {landed}: refusing to disarm")
         return Verdict(not reasons, reasons)
 
     def check_takeoff(self, alt_m: float, status: dict) -> Verdict:
@@ -446,6 +526,48 @@ class FlightGate:
                 uniq.append(r)
         return Verdict(not uniq, uniq)
 
+    # MAV_CMD names the stored mission may contain, and the frames whose altitude
+    # is metres above home (MAV_FRAME_GLOBAL_RELATIVE_ALT = 3, ..._INT = 6).
+    STORED_MISSION_COMMANDS = ("MAV_CMD_NAV_WAYPOINT", "MAV_CMD_NAV_RETURN_TO_LAUNCH")
+    RELATIVE_ALT_FRAMES = (3, 6)
+
+    def check_stored_mission(self, items: List[dict], home: Optional[dict]) -> Verdict:
+        """Validate the mission as downloaded FROM THE FC (not what we think we
+        uploaded: QGC or a previous session may have replaced it). `items` is
+        MavlinkHub.download_mission()['items']; seq 0 is the home placeholder."""
+        reasons: List[str] = []
+        body = [it for it in items if it.get("seq") != 0]
+        if not body:
+            reasons.append("no mission stored on the vehicle (upload_mission first)")
+        if len(body) > self.cfg.max_mission_items + 1:          # +1 for the final RTL
+            reasons.append(f"stored mission has {len(body)} items > max "
+                           f"{self.cfg.max_mission_items}")
+        if not any(it.get("command") == "MAV_CMD_NAV_WAYPOINT" for it in body):
+            reasons.append("stored mission has no NAV_WAYPOINT")
+        for it in body:
+            label, cmd = f"wp{it.get('seq')}", it.get("command")
+            if cmd not in self.STORED_MISSION_COMMANDS:
+                reasons.append(f"{label}: command {cmd} not allowed in an LLM-started "
+                               "mission (only NAV_WAYPOINT and RTL)")
+            elif cmd == "MAV_CMD_NAV_WAYPOINT":
+                if it.get("frame") not in self.RELATIVE_ALT_FRAMES:
+                    reasons.append(f"{label}: frame {it.get('frame')} is not "
+                                   "relative-to-home altitude")
+                try:
+                    reasons += self.check_position(float(it["lat"]), float(it["lon"]),
+                                                   float(it["alt_m"]), home, label=label)
+                except (KeyError, TypeError, ValueError):
+                    reasons.append(f"{label}: malformed item")
+        uniq = list(dict.fromkeys(reasons))
+        return Verdict(not uniq, uniq)
+
+    @staticmethod
+    def mission_digest(items: List[dict]) -> str:
+        """Short fingerprint of the stored mission; the confirmation token is
+        bound to it, so changing the mission invalidates an approval."""
+        blob = json.dumps(items, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()[:12]
+
     def check_start_mission(self, status: dict, mission_count: Optional[int]) -> Verdict:
         reasons = []
         if not status.get("armed"):
@@ -453,7 +575,10 @@ class FlightGate:
         if not mission_count:
             reasons.append("no mission on the vehicle (upload_mission first)")
         alt = status.get("rel_alt")
-        if alt is not None and alt < self.cfg.min_goto_alt_m:
+        if not isinstance(alt, (int, float)) or math.isnan(alt) \
+                or self.stale_streams(status, ("position",)):
+            reasons.append("altitude unknown or stale: cannot confirm the aircraft is airborne")
+        elif alt < self.cfg.min_goto_alt_m:
             reasons.append(f"rel_alt {alt:.1f} m < {self.cfg.min_goto_alt_m} m: take off first")
         return Verdict(not reasons, reasons)
 
@@ -466,6 +591,8 @@ class FlightGate:
             "geofence_radius_m_from_home": c.geofence_radius_m,
             "max_speed_ms": c.max_speed_ms, "max_mission_items": c.max_mission_items,
             "allowed_modes": c.allowed_modes, "safe_modes_always_allowed": c.safe_modes,
+            "auto_mode": "only via start_mission: stored mission is re-read from the "
+                         "vehicle and validated, plus confirmation",
             "confirm_actions": c.confirm_actions, "confirm_mode": c.confirm_mode,
             "rate_limit": {"min_interval_s": c.min_action_interval_s,
                            "per_minute": c.max_actions_per_minute},

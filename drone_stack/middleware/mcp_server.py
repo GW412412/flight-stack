@@ -43,6 +43,7 @@ from mcp.server.fastmcp import FastMCP                     # noqa: E402
 from mcp.types import ToolAnnotations                      # noqa: E402
 
 from drone_tools import SYSTEM_PROMPT, DroneTools          # noqa: E402
+from mcp_auth import AuthConfigError, check_exposure, load_token, protect  # noqa: E402
 from stack_config import load_config                       # noqa: E402
 
 log = logging.getLogger("mavlink-mcp")
@@ -140,8 +141,9 @@ def build_server(tools: DroneTools, host: str = "127.0.0.1", port: int = 8765) -
     # ------------------------------------------------------------ actions
     @mcp.tool(annotations=ACT)
     def set_mode(mode: str, confirm_token: Optional[str] = None) -> dict:
-        """Change flight mode. Allowed: GUIDED, LOITER, BRAKE, POSHOLD, ALT_HOLD, AUTO,
-        LAND, RTL, SMART_RTL (see get_safety_limits). GUIDED is needed for takeoff/goto."""
+        """Change flight mode. Allowed: GUIDED, LOITER, BRAKE, POSHOLD, ALT_HOLD,
+        LAND, RTL, SMART_RTL (see get_safety_limits). GUIDED is needed for takeoff/goto.
+        AUTO is not a mode switch: use start_mission."""
         return tools.set_mode(mode, confirm_token)
 
     @mcp.tool(annotations=ACT)
@@ -196,8 +198,9 @@ def build_server(tools: DroneTools, host: str = "127.0.0.1", port: int = 8765) -
 
     @mcp.tool(annotations=ACT)
     def start_mission(confirm_token: Optional[str] = None) -> dict:
-        """Start the uploaded mission (switches to AUTO). Take off first.
-        Confirmation required."""
+        """Start the mission stored on the vehicle (switches to AUTO). Take off first.
+        The stored mission is re-read and validated (geofence, altitude, allowed
+        commands) and the confirmation is bound to it. Confirmation required."""
         return tools.start_mission(confirm_token)
 
     @mcp.tool(annotations=ACT)
@@ -235,13 +238,28 @@ def main(argv=None):
     log.info("profile=%s mavlink=%s actuation=%s dry_run=%s confirm=%s transport=%s",
              cfg.profile, cfg.mavlink.url, cfg.safety.actuation_enabled, cfg.safety.dry_run,
              cfg.safety.confirm_mode, transport)
+    for item in cfg.ignored_env:
+        log.warning("env override ignored (would loosen a hardware profile): %s", item)
+    token = None
+    if transport != "stdio":
+        try:
+            token = load_token()
+            check_exposure(host, token)
+        except AuthConfigError as e:
+            ap.error(str(e))
     tools = DroneTools.from_config(cfg)
     server = build_server(tools, host=host, port=port)
-    if transport != "stdio":
-        log.info("MCP endpoint: http://%s:%s%s", host, port,
-                 "/mcp" if transport == "streamable-http" else "/sse")
     try:
-        server.run(transport=transport)
+        if transport == "stdio":
+            server.run(transport=transport)
+        else:
+            import uvicorn
+            log.info("MCP endpoint: http://%s:%s%s  auth=%s", host, port,
+                     "/mcp" if transport == "streamable-http" else "/sse",
+                     "bearer" if token else "none (loopback only)")
+            app = server.streamable_http_app() if transport == "streamable-http" \
+                else server.sse_app()
+            uvicorn.run(protect(app, token), host=host, port=port, log_level="info")
     finally:
         tools.close()
 

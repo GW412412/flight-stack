@@ -12,6 +12,10 @@ gate and the monitor. Values come from (lowest to highest priority):
          DRONE_DRY_RUN        1/0  -> safety.dry_run
          DRONE_ACTUATION      1/0  -> safety.actuation_enabled
          DRONE_CONFIRM_MODE   echo|operator -> safety.confirm_mode
+       On a hardware profile (anything but "sitl"/"default") these three can
+       only TIGHTEN the file: actuation 1->0, dry_run 0->1, confirm_mode
+       echo->operator. A loosening value is ignored and listed in
+       StackConfig.ignored_env (the server logs it at startup).
          MCP_HOST / MCP_PORT  streamable-HTTP bind address
 
 Why a dataclass and not a dict: every limit the LLM can bump into is spelled
@@ -40,6 +44,10 @@ class MavlinkConfig:
     # Trap 1). It also makes our packets easy to spot in .tlog files.
     source_system: int = 250
     source_component: int = 191       # MAV_COMP_ID_ONBOARD_COMPUTER
+    # 0 = pin the first autopilot heartbeat heard. Set the FC's sysid to refuse
+    # any other system from ever being pinned (data and ACKs from every other
+    # sysid/compid are ignored either way once pinned).
+    vehicle_sysid: int = 0
     send_heartbeat: bool = True       # 1 Hz GCS-type heartbeat (identifies us)
     # MAVProxy already requests streams from the FC. Only enable this when the
     # server talks to the FC/SITL directly (no MAVProxy in between).
@@ -66,9 +74,12 @@ class SafetyConfig:
     max_mission_items: int = 100
 
     # Modes the LLM may request. Manual/acro-type modes are deliberately absent:
-    # those belong to the pilot's sticks.
+    # those belong to the pilot's sticks. AUTO is absent too: it flies whatever
+    # mission is stored on the FC, so the only way in is the start_mission tool
+    # (confirmation + validation of the stored mission). If a profile adds
+    # "AUTO" here, set_mode("AUTO") is routed through that same path.
     allowed_modes: List[str] = field(default_factory=lambda: [
-        "GUIDED", "LOITER", "BRAKE", "POSHOLD", "ALT_HOLD", "AUTO",
+        "GUIDED", "LOITER", "BRAKE", "POSHOLD", "ALT_HOLD",
         "LAND", "RTL", "SMART_RTL",
     ])
     # "Stop" actions: always allowed (no confirmation, no rate limit, not
@@ -91,13 +102,18 @@ class SafetyConfig:
     confirm_mode: str = "echo"
     confirm_ttl_s: float = 60.0
 
+    # Every non-safe action needs position, attitude and sys_status messages
+    # younger than this (a live heartbeat alone is not enough); goto/mission
+    # actions also need GPS and EKF messages that fresh.
+    telemetry_max_age_s: float = 3.0
+
     # Rate limits on non-safe actions.
     min_action_interval_s: float = 1.0
     max_actions_per_minute: int = 20
 
     # Pre-arm checks (the FC runs its own pre-arm checks too; these are extra).
     require_gps_fix: int = 3          # 3 = 3D fix
-    min_battery_pct: int = 30         # ignored when the FC reports -1 (unknown)
+    min_battery_pct: int = 30         # unknown (FC reports -1/None) is refused, not ignored
     require_rc_link: bool = True      # pilot must have the radio up to arm
 
     # Pilot authority. If the flight mode changes and the hub did not ask for
@@ -142,9 +158,16 @@ class ServerConfig:
     log_dir: str = "logs"             # command + confirmation JSONL logs
 
 
+# Profiles where the environment may loosen safety settings (simulation only).
+# Every other profile name is treated as flight hardware.
+RELAXED_PROFILES = frozenset({"sitl", "default"})
+
+
 @dataclass
 class StackConfig:
     profile: str = "default"
+    # Env overrides refused because they would loosen a hardware profile.
+    ignored_env: List[str] = field(default_factory=list)
     mavlink: MavlinkConfig = field(default_factory=MavlinkConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
@@ -185,12 +208,31 @@ def load_config(path: Optional[str] = None) -> StackConfig:
     # Environment overrides (last word).
     if os.environ.get("MAVLINK_URL"):
         cfg.mavlink.url = os.environ["MAVLINK_URL"]
-    for env, attr in (("DRONE_DRY_RUN", "dry_run"), ("DRONE_ACTUATION", "actuation_enabled")):
-        b = _env_bool(env)
-        if b is not None:
-            setattr(cfg.safety, attr, b)
-    if os.environ.get("DRONE_CONFIRM_MODE"):
-        cfg.safety.confirm_mode = os.environ["DRONE_CONFIRM_MODE"]
+    hardware = cfg.profile.strip().lower() not in RELAXED_PROFILES
+
+    def refuse(env: str, why: str) -> None:
+        cfg.ignored_env.append(f"{env}: {why}")
+
+    b = _env_bool("DRONE_ACTUATION")
+    if b is not None:
+        if hardware and b and not cfg.safety.actuation_enabled:
+            refuse("DRONE_ACTUATION=1", "hardware profile; enable actuation in the TOML")
+        else:
+            cfg.safety.actuation_enabled = b
+    b = _env_bool("DRONE_DRY_RUN")
+    if b is not None:
+        if hardware and not b and cfg.safety.dry_run:
+            refuse("DRONE_DRY_RUN=0", "hardware profile; leave dry_run in the TOML")
+        else:
+            cfg.safety.dry_run = b
+    mode = os.environ.get("DRONE_CONFIRM_MODE")
+    if mode:
+        if mode not in ("echo", "operator"):
+            raise ValueError("DRONE_CONFIRM_MODE must be 'echo' or 'operator'")
+        if hardware and mode == "echo" and cfg.safety.confirm_mode != "echo":
+            refuse("DRONE_CONFIRM_MODE=echo", "hardware profile requires operator confirmation")
+        else:
+            cfg.safety.confirm_mode = mode
     if os.environ.get("MCP_HOST"):
         cfg.server.host = os.environ["MCP_HOST"]
     if os.environ.get("MCP_PORT"):

@@ -2,10 +2,9 @@
 between the LLM and the aircraft. No MAVLink, no network."""
 import pytest
 
+from gate_helpers import GOOD_TELEM, HOME, good_status
 from safety_gate import ConfirmationBook, FlightGate, RateLimiter, SafetyGate
 from stack_config import SafetyConfig
-
-HOME = {"lat": -35.363261, "lon": 149.165230, "alt_msl_m": 584.0}
 
 
 class Clock:
@@ -23,17 +22,6 @@ def cfg(**kw):
                 max_actions_per_minute=1000)
     base.update(kw)
     return SafetyConfig(**base)
-
-
-def good_status(**kw):
-    s = {"link_ok": True, "heartbeat_age_s": 0.5, "mode": "GUIDED", "armed": False,
-         "fix_type": 3, "battery": 90, "rc_link_ok": True, "rel_alt": 0.0,
-         "lat": HOME["lat"], "lon": HOME["lon"]}
-    s.update(kw)
-    return s
-
-
-GOOD_TELEM = {"ekf": {"position_ok": True, "flag_names": []}, "rc": {"channels": [1500] * 8}}
 
 
 # ------------------------------------------------------------ common checks
@@ -71,8 +59,8 @@ def test_pilot_override_auto_expiry():
 
 def test_rc_inhibit_switch():
     g = FlightGate(cfg(llm_inhibit_rc_channel=7, llm_inhibit_pwm_above=1800))
-    hi = {"rc": {"channels": [1500] * 6 + [2000, 1500]}}
-    lo = {"rc": {"channels": [1500] * 8}}
+    hi = dict(GOOD_TELEM, rc={"channels": [1500] * 6 + [2000, 1500]})
+    lo = dict(GOOD_TELEM, rc={"channels": [1500] * 8})
     assert not g.check_common("goto", good_status(), hi).allowed
     assert g.check_common("goto", good_status(), lo).allowed
     assert g.check_common("set_mode", good_status(), hi, safe=True).allowed
@@ -144,9 +132,12 @@ def test_arm_requirements():
     assert not g.check_arm(good_status(armed=True), GOOD_TELEM).allowed
 
 
-def test_arm_battery_unknown_is_not_a_block():
+@pytest.mark.parametrize("batt", [None, -1, float("nan"), 101, "80"])
+def test_arm_battery_unknown_is_a_block(batt):
+    # P1 #6: unknown is not "full". (Used to be allowed when the FC said -1.)
     g = FlightGate(cfg())
-    assert g.check_arm(good_status(battery=-1), GOOD_TELEM).allowed
+    v = g.check_arm(good_status(battery=batt), GOOD_TELEM)
+    assert not v.allowed and "battery level unknown" in " ".join(v.reasons)
 
 
 def test_arm_rc_not_required_in_sitl_profile():

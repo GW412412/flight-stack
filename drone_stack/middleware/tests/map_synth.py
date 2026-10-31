@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import rasterio
