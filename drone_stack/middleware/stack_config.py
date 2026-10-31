@@ -101,7 +101,7 @@ class SafetyConfig:
 
     # Pre-arm checks (the FC runs its own pre-arm checks too; these are extra).
     require_gps_fix: int = 3          # 3 = 3D fix
-    min_battery_pct: int = 30         # ignored when the FC reports -1 (unknown)
+    min_battery_pct: int = 30         # unknown (FC reports -1/None) is refused, not ignored
     require_rc_link: bool = True      # pilot must have the radio up to arm
 
     # Pilot authority. If the flight mode changes and the hub did not ask for

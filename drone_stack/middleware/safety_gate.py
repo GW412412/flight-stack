@@ -47,6 +47,16 @@ class Verdict:
     reasons: list = field(default_factory=list)
 
 
+def battery_unknown(batt: Any) -> bool:
+    """True when the battery level is not a usable 0..100 number.
+
+    The FC reports -1 for 'unknown' and the node stores that as None. Unknown
+    is NOT 'full': every commanding check treats it as not OK."""
+    if isinstance(batt, bool) or not isinstance(batt, (int, float)):
+        return True
+    return math.isnan(batt) or not (0 <= batt <= 100)
+
+
 def _in_bounds(lat: float, lon: float, zone_bounds: Tuple[float, float, float, float]) -> bool:
     minlat, minlon, maxlat, maxlon = zone_bounds
     return minlat <= lat <= maxlat and minlon <= lon <= maxlon
@@ -57,10 +67,12 @@ class SafetyGate:
         reasons = []
         if "mode" not in status and "armed" not in status:
             reasons.append("no telemetry: link down")
-        batt = status.get("battery", 101)
-        if batt is not None and 0 <= batt < 30:   # -1 = FC does not know
-            reasons.append(f"battery {status.get('battery')}% < 30%")
-        fix = status.get("fix_type", 0)
+        batt = status.get("battery")
+        if battery_unknown(batt):                 # None / -1 = FC does not know
+            reasons.append("battery level unknown")
+        elif batt < 30:
+            reasons.append(f"battery {batt}% < 30%")
+        fix = status.get("fix_type") or 0
         if fix < 3:
             reasons.append(f"GPS fix type {fix} < 3 (3D)")
         if status.get("mode", "").upper() in ("AUTO", "RTL", "LAND"):
@@ -84,13 +96,19 @@ class SafetyGate:
         reasons = []
         if not status.get("armed"):
             reasons.append("aircraft not armed")
-        fix = status.get("fix_type", 0)
+        fix = status.get("fix_type") or 0
         if fix < 6:
             reasons.append(f"GPS fix type {fix}: RTK fixed (6) required to spray")
-        if status.get("rel_alt", 999) > 30:
-            reasons.append(f"altitude {status.get('rel_alt')}m > 30m spray ceiling")
-        if status.get("battery", 101) < 20:
-            reasons.append(f"battery {status.get('battery')}% < 20% RTL reserve")
+        alt = status.get("rel_alt")
+        if not isinstance(alt, (int, float)) or math.isnan(alt):
+            reasons.append("altitude unknown - fail closed")
+        elif alt > 30:
+            reasons.append(f"altitude {alt}m > 30m spray ceiling")
+        batt = status.get("battery")
+        if battery_unknown(batt):
+            reasons.append("battery level unknown - fail closed")
+        elif batt < 20:
+            reasons.append(f"battery {batt}% < 20% RTL reserve")
 
         # RC link (ELRS hard authority path must be healthy) — fail closed if unknown
         if status.get("rc_link_ok") is not True:
@@ -349,7 +367,9 @@ class FlightGate:
         if fix < self.cfg.require_gps_fix:
             reasons.append(f"GPS fix {fix} < required {self.cfg.require_gps_fix}")
         batt = status.get("battery")
-        if batt is not None and 0 <= batt < self.cfg.min_battery_pct:
+        if battery_unknown(batt):
+            reasons.append("battery level unknown (FC reports none): refusing to arm")
+        elif batt < self.cfg.min_battery_pct:
             reasons.append(f"battery {batt}% < {self.cfg.min_battery_pct}%")
         if self.cfg.require_rc_link and status.get("rc_link_ok") is not True:
             reasons.append("RC/ELRS link not confirmed - the pilot must have the radio up "

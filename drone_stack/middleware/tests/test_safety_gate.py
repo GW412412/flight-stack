@@ -144,9 +144,12 @@ def test_arm_requirements():
     assert not g.check_arm(good_status(armed=True), GOOD_TELEM).allowed
 
 
-def test_arm_battery_unknown_is_not_a_block():
+@pytest.mark.parametrize("batt", [None, -1, float("nan"), 101, "80"])
+def test_arm_battery_unknown_is_a_block(batt):
+    # P1 #6: unknown is not "full". (Used to be allowed when the FC said -1.)
     g = FlightGate(cfg())
-    assert g.check_arm(good_status(battery=-1), GOOD_TELEM).allowed
+    v = g.check_arm(good_status(battery=batt), GOOD_TELEM)
+    assert not v.allowed and "battery level unknown" in " ".join(v.reasons)
 
 
 def test_arm_rc_not_required_in_sitl_profile():

@@ -108,6 +108,7 @@ class MavNode:
         # Legacy flat state (tools.py / SafetyGate.can_arm read these keys).
         self.state = {
             "messages": [],           # last STATUSTEXT strings (bounded below)
+            "battery": None,          # None = unknown (never a made-up number)
             "rc_link_ok": None,
             "video_trusted": None,
             "live_id_enabled": None,
@@ -271,10 +272,11 @@ class MavNode:
                 "pitch_deg": round(math.degrees(msg.pitch), 2),
                 "yaw_deg": round(math.degrees(msg.yaw), 2)}
         elif t == "SYS_STATUS":
-            self.state.update(battery=msg.battery_remaining,
-                              voltage=msg.voltage_battery / 1000.0)
+            # battery_remaining -1 = FC does not know -> None, never a number.
+            pct = msg.battery_remaining if 0 <= msg.battery_remaining <= 100 else None
+            self.state.update(battery=pct, voltage=msg.voltage_battery / 1000.0)
             self.telem["battery"] = {
-                "remaining_pct": msg.battery_remaining,
+                "remaining_pct": pct,
                 "voltage_v": msg.voltage_battery / 1000.0,
                 "current_a": msg.current_battery / 100.0 if msg.current_battery >= 0 else None}
             # RC receiver health as reported by the FC itself (most reliable
@@ -329,7 +331,7 @@ class MavNode:
             self._csv.write(
                 f"{now},{t},{self.state.get('lat','')},{self.state.get('lon','')},"
                 f"{self.state.get('rel_alt','')},{self.state.get('heading','')},"
-                f"{self.state.get('battery','')}\n")
+                f"{'' if self.state.get('battery') is None else self.state['battery']}\n")
             self._csv.flush()
 
     # ------------------------------------------------------------ waiters
