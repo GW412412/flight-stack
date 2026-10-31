@@ -367,7 +367,8 @@ class FlightGate:
         reasons = []
         if not self.cfg.actuation_enabled:
             reasons.append("actuation disabled (read-only server): set "
-                           "safety.actuation_enabled=true or DRONE_ACTUATION=1")
+                           "safety.actuation_enabled=true (hardware profiles: in the "
+                           "TOML only; sitl: or DRONE_ACTUATION=1)")
         if not status.get("link_ok"):
             reasons.append(f"telemetry link down/stale (heartbeat age "
                            f"{status.get('heartbeat_age_s')})")

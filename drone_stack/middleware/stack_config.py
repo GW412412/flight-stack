@@ -12,6 +12,10 @@ gate and the monitor. Values come from (lowest to highest priority):
          DRONE_DRY_RUN        1/0  -> safety.dry_run
          DRONE_ACTUATION      1/0  -> safety.actuation_enabled
          DRONE_CONFIRM_MODE   echo|operator -> safety.confirm_mode
+       On a hardware profile (anything but "sitl"/"default") these three can
+       only TIGHTEN the file: actuation 1->0, dry_run 0->1, confirm_mode
+       echo->operator. A loosening value is ignored and listed in
+       StackConfig.ignored_env (the server logs it at startup).
          MCP_HOST / MCP_PORT  streamable-HTTP bind address
 
 Why a dataclass and not a dict: every limit the LLM can bump into is spelled
@@ -154,9 +158,16 @@ class ServerConfig:
     log_dir: str = "logs"             # command + confirmation JSONL logs
 
 
+# Profiles where the environment may loosen safety settings (simulation only).
+# Every other profile name is treated as flight hardware.
+RELAXED_PROFILES = frozenset({"sitl", "default"})
+
+
 @dataclass
 class StackConfig:
     profile: str = "default"
+    # Env overrides refused because they would loosen a hardware profile.
+    ignored_env: List[str] = field(default_factory=list)
     mavlink: MavlinkConfig = field(default_factory=MavlinkConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
@@ -197,12 +208,31 @@ def load_config(path: Optional[str] = None) -> StackConfig:
     # Environment overrides (last word).
     if os.environ.get("MAVLINK_URL"):
         cfg.mavlink.url = os.environ["MAVLINK_URL"]
-    for env, attr in (("DRONE_DRY_RUN", "dry_run"), ("DRONE_ACTUATION", "actuation_enabled")):
-        b = _env_bool(env)
-        if b is not None:
-            setattr(cfg.safety, attr, b)
-    if os.environ.get("DRONE_CONFIRM_MODE"):
-        cfg.safety.confirm_mode = os.environ["DRONE_CONFIRM_MODE"]
+    hardware = cfg.profile.strip().lower() not in RELAXED_PROFILES
+
+    def refuse(env: str, why: str) -> None:
+        cfg.ignored_env.append(f"{env}: {why}")
+
+    b = _env_bool("DRONE_ACTUATION")
+    if b is not None:
+        if hardware and b and not cfg.safety.actuation_enabled:
+            refuse("DRONE_ACTUATION=1", "hardware profile; enable actuation in the TOML")
+        else:
+            cfg.safety.actuation_enabled = b
+    b = _env_bool("DRONE_DRY_RUN")
+    if b is not None:
+        if hardware and not b and cfg.safety.dry_run:
+            refuse("DRONE_DRY_RUN=0", "hardware profile; leave dry_run in the TOML")
+        else:
+            cfg.safety.dry_run = b
+    mode = os.environ.get("DRONE_CONFIRM_MODE")
+    if mode:
+        if mode not in ("echo", "operator"):
+            raise ValueError("DRONE_CONFIRM_MODE must be 'echo' or 'operator'")
+        if hardware and mode == "echo" and cfg.safety.confirm_mode != "echo":
+            refuse("DRONE_CONFIRM_MODE=echo", "hardware profile requires operator confirmation")
+        else:
+            cfg.safety.confirm_mode = mode
     if os.environ.get("MCP_HOST"):
         cfg.server.host = os.environ["MCP_HOST"]
     if os.environ.get("MCP_PORT"):
