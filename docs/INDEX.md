@@ -6,6 +6,7 @@ Everyone's ideas are welcome. We value your expert knowledge and your contributi
 
 ## Changelog
 
+- 2026-10-25: Opened the [message board](https://github.com/GW412412/flight-stack/discussions) (GitHub Discussions) for live discussion between collaborators, with forms in `.github/DISCUSSION_TEMPLATE/`. How it fits with DISCUSSION.md and DECISIONS.md is in [../CONTRIBUTING.md](../CONTRIBUTING.md).
 - 2026-10-25: Added the map-to-route prototype design ([MAP-TO-ROUTE.md](MAP-TO-ROUTE.md)) and example settings ([../config/map_to_route.example.toml](../config/map_to_route.example.toml)): ODM orthomosaic, DSM and DTM to targets to waypoint sorties, pre-checked by the safety gate. Draft / experimental.
 - 2026-10-25: Added the discussion log ([DISCUSSION.md](DISCUSSION.md)) and the group protocol in [../CONTRIBUTING.md](../CONTRIBUTING.md): everyone logs updates, questions and proposals, and the group records agreed outcomes in DECISIONS.md.
 - 2026-10-25: Added the "LLM behind the sticks" stack ([LLM-STACK.md](LLM-STACK.md)): MAVProxy hub, MAVLink MCP server with FlightGate, Ollama agent, Open WebUI via mcpo, data-flow monitor, SITL bring-up, systemd units and tests.

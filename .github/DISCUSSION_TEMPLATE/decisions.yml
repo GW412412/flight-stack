@@ -1,0 +1,42 @@
+title: "[Decision] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An outcome the group has agreed under [CONTRIBUTING.md](https://github.com/GW412412/flight-stack/blob/main/CONTRIBUTING.md). This board only mirrors it: the permanent record is the dated entry in [docs/DECISIONS.md](https://github.com/GW412412/flight-stack/blob/main/docs/DECISIONS.md), and that file wins if the two ever disagree.
+  - type: input
+    id: o_item
+    attributes:
+      label: O-item
+      placeholder: "O-21"
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision
+    validations:
+      required: true
+  - type: input
+    id: agreed
+    attributes:
+      label: Agreed on (date) and by whom
+      placeholder: "2026-10-26, G, Grok, Maya"
+    validations:
+      required: true
+  - type: dropdown
+    id: safety
+    attributes:
+      label: Flight safety
+      options:
+        - Does not touch flight safety
+        - Touches flight safety, and G gave his explicit OK (link below)
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: The DECISIONS.md entry, the O-item, G's OK, and the PR that carries it out.
+    validations:
+      required: true

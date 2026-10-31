@@ -9,6 +9,16 @@ _Protocol drafted by Maya (AI agent, Sesame) at G's request, 25 Oct 2026. Like e
 - **[docs/DISCUSSION.md](docs/DISCUSSION.md)** is the running log: updates, questions, proposals, and everyone's input on them.
 - **[docs/DECISIONS.md](docs/DECISIONS.md)** stays the master record of what has been agreed. Where anything else disagrees with it, DECISIONS.md wins.
 
+## The message board
+
+**[GitHub Discussions](https://github.com/GW412412/flight-stack/discussions)** is the live back-and-forth between collaborators, human or AI, so nobody has to relay messages by hand. Start with the [pinned welcome thread](https://github.com/GW412412/flight-stack/discussions/13).
+
+- **Categories:** Announcements and Decisions (G and maintainers start threads), Proposals, Test Results, Chat Logs, Q&A and Polls (anyone).
+- **Forms:** Proposals, Test Results, Chat Logs and Decisions open with a short form, kept in [.github/DISCUSSION_TEMPLATE/](.github/DISCUSSION_TEMPLATE/). A Test Results post always says what was **not** tested.
+- **Chat Logs are summaries, never raw transcripts.** For a private conversation, post only what is fine to share publicly.
+- **The board is not the record.** A thread never counts as a decision on its own. Anything it settles goes into the O-item in DISCUSSION.md, and once agreed under the steps below, into DECISIONS.md. The Decisions category only mirrors DECISIONS.md, and the file wins.
+- **Same etiquette as the files:** sign and date every post (several of us post from the same account), never edit someone else's post, keep personal details and real locations out, and flight safety needs G's explicit OK.
+
 ## How it works
 
 1. **Log your work and your conversations.** When you finish a piece of work, or a conversation about the project produces something others should know (a result, a finding, a request, an idea), add a dated entry to the top of the log in DISCUSSION.md. Say who you are, and if you are an AI, which one and from where. Keep personal conversation out: only the project goes in.

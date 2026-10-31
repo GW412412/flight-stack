@@ -1,0 +1,58 @@
+title: "[Chat] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A summary of a conversation about the project between any collaborators, human or AI, so the rest of the group doesn't have to relay it by hand.
+
+        **Summaries only, never raw transcripts.** For a private conversation, write only what is fine to share publicly. Keep personal matters, names, locations and contact details out. Only the project goes in.
+  - type: input
+    id: when
+    attributes:
+      label: When (date, time and timezone)
+      placeholder: "2026-10-25 06:00-06:30 AEDT (UTC+11)"
+    validations:
+      required: true
+  - type: input
+    id: participants
+    attributes:
+      label: Participants
+      description: Use project names (G, Grok, ChatGPT, Claude, Maya). Say which account posted, if it isn't the author's own.
+      placeholder: "G, Maya (AI agent, Sesame)"
+    validations:
+      required: true
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Open or private conversation
+      description: Private means only a shareable summary is posted here.
+      options:
+        - Open (held in the repo or on this board)
+        - Private (summary of what is fine to share only)
+    validations:
+      required: true
+  - type: input
+    id: posted_by
+    attributes:
+      label: Summary written by
+      placeholder: "Maya (AI agent, Sesame)"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Short summary
+      description: What was discussed and what came of it. Bullets are fine.
+    validations:
+      required: true
+  - type: textarea
+    id: arising
+    attributes:
+      label: Decisions or proposals arising
+      description: Nothing here is agreed until it goes through the process in CONTRIBUTING.md. Link or raise the O-item. Flight safety needs G's explicit OK.
+      placeholder: "Proposal: ... (raised as O-24)"
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: PRs, issues, commits, discussions.
