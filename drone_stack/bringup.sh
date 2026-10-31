@@ -42,7 +42,7 @@ PY="${PYTHON:-python3}"
 MCP_PORT_HTTP="${MCP_HTTP_PORT:-8765}"
 MONITOR_WEB="${MONITOR_WEB_PORT:-8766}"
 MCPO_PORT="${MCPO_PORT:-8001}"        # 8000 is taken by /workspace/local-agent
-MCPO_HOST="${MCPO_HOST:-127.0.0.1}"   # 0.0.0.0 only if a Docker backend must reach it (firewall it!)
+MCPO_HOST="${MCPO_HOST:-127.0.0.1}"   # non-loopback (e.g. 0.0.0.0 for a Docker backend) needs MCPO_API_KEY[_FILE]
 
 # ---- helpers ------------------------------------------------------------------
 start_bg() {   # start_bg NAME CMD...   (setsid: survives the terminal)
@@ -57,6 +57,11 @@ stop_one() {
   if is_running "$1"; then kill "$(cat "$RUN/$1.pid")" && echo "  stopped $1"; fi
   rm -f "$RUN/$1.pid"
 }
+read_secret() {  # read_secret FILE_VAR VALUE_VAR -> prints the secret named by env vars (file wins)
+  local f="${!1:-}" v="${!2:-}"
+  if [[ -n "$f" ]]; then tr -d '[:space:]' < "$f"; else printf '%s' "$v"; fi
+}
+is_loopback_host() { [[ "$1" == "127.0.0.1" || "$1" == "localhost" || "$1" == "::1" ]]; }
 wait_port() {  # wait_port PORT SECONDS
   for _ in $(seq 1 "$2"); do
     (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0
@@ -108,7 +113,18 @@ start_bg monitor "$PY" "$MW/mav_monitor.py" --headless --web "$MONITOR_WEB"
 # 5. Optional Open WebUI bridge ----------------------------------------------------
 if [[ "$WEBUI" == 1 ]]; then
   command -v mcpo >/dev/null || { echo "mcpo not installed: pip install mcpo"; exit 1; }
-  start_bg mcpo mcpo --host "$MCPO_HOST" --port "$MCPO_PORT" \
+  # Tokens come from the environment (see docs/P1-SAFETY-NOTES.md); never put one in this repo.
+  #   MCP_AUTH_TOKEN[_FILE]  mcpo -> MCP server (only if the server was started with a token)
+  #   MCPO_API_KEY[_FILE]    Open WebUI -> mcpo  (REQUIRED when MCPO_HOST is not loopback)
+  MCP_TOK="$(read_secret MCP_AUTH_TOKEN_FILE MCP_AUTH_TOKEN)"
+  MCPO_KEY="$(read_secret MCPO_API_KEY_FILE MCPO_API_KEY)"
+  if ! is_loopback_host "$MCPO_HOST" && [[ -z "$MCPO_KEY" ]]; then
+    echo "MCPO_HOST=$MCPO_HOST is not loopback: set MCPO_API_KEY_FILE (or MCPO_API_KEY) first"; exit 1
+  fi
+  MCPO_ARGS=()
+  [[ -n "$MCPO_KEY" ]] && MCPO_ARGS+=(--api-key "$MCPO_KEY" --strict-auth)
+  [[ -n "$MCP_TOK" ]] && MCPO_ARGS+=(--header "{\"Authorization\": \"Bearer $MCP_TOK\"}")
+  start_bg mcpo mcpo --host "$MCPO_HOST" --port "$MCPO_PORT" ${MCPO_ARGS[@]+"${MCPO_ARGS[@]}"} \
       --server-type streamable-http -- "http://127.0.0.1:$MCP_PORT_HTTP/mcp"
 fi
 

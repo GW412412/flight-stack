@@ -68,6 +68,13 @@ def mcp_tools_to_ollama(tools) -> list:
     return out
 
 
+def auth_headers() -> dict:
+    """Bearer header from MCP_AUTH_TOKEN_FILE / MCP_AUTH_TOKEN (same vars as the server)."""
+    from mcp_auth import load_token
+    token = load_token()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def result_to_text(res) -> str:
     """CallToolResult -> compact text for the model (prefers structured JSON)."""
     if getattr(res, "structuredContent", None):
@@ -138,7 +145,7 @@ async def run(a):
                                            env=dict(os.environ))
             read, write = await stack.enter_async_context(stdio_client(params))
         else:
-            read, write, _ = await stack.enter_async_context(streamablehttp_client(a.mcp_url))
+            read, write, _ = await stack.enter_async_context(streamablehttp_client(a.mcp_url, headers=auth_headers() or None))
         session = await stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
         options = {"num_ctx": a.num_ctx, "temperature": a.temperature}
