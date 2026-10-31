@@ -1,0 +1,41 @@
+# Stage 0 CI. PARKED here because the bot's GitHub token has no `workflow` scope
+# and GitHub refuses any push that creates .github/workflows/*.
+# To enable: move this file to .github/workflows/ci.yml (one `git mv`), commit as yourself.
+# Draft PR #32 also parks a CI file (ci/github-actions/ci.yml); keep one, delete the other.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: drone_stack/middleware/requirements.txt
+      - name: Install dependencies (MAVProxy is the ground-station tool; tests do not need it)
+        run: |
+          python -m pip install --upgrade pip
+          grep -vi '^MAVProxy' drone_stack/middleware/requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt ruff shellcheck-py
+      - name: Lint (syntax errors and undefined/unused names only)
+        run: ruff check --select E9,F .
+      - name: shellcheck
+        run: git ls-files '*.sh' | xargs shellcheck
+      - name: Tests (includes config-invariant checks on the hardware TOML)
+        working-directory: drone_stack/middleware
+        run: python -m pytest -q -p no:cacheprovider

@@ -1,6 +1,5 @@
 """P1 #8: MCP HTTP endpoint is loopback by default and token-protected when
 exposed. No real token appears in this file; they are generated per test."""
-import asyncio
 import secrets
 from unittest.mock import MagicMock
 
