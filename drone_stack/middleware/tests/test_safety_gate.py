@@ -59,8 +59,8 @@ def test_pilot_override_auto_expiry():
 
 def test_rc_inhibit_switch():
     g = FlightGate(cfg(llm_inhibit_rc_channel=7, llm_inhibit_pwm_above=1800))
-    hi = {"rc": {"channels": [1500] * 6 + [2000, 1500]}}
-    lo = {"rc": {"channels": [1500] * 8}}
+    hi = dict(GOOD_TELEM, rc={"channels": [1500] * 6 + [2000, 1500]})
+    lo = dict(GOOD_TELEM, rc={"channels": [1500] * 8})
     assert not g.check_common("goto", good_status(), hi).allowed
     assert g.check_common("goto", good_status(), lo).allowed
     assert g.check_common("set_mode", good_status(), hi, safe=True).allowed

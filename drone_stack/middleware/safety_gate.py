@@ -335,6 +335,31 @@ class FlightGate:
         return [n for n in names
                 if not isinstance(ages.get(n), (int, float)) or ages[n] > limit]
 
+    # ------------------------------------------------------------ nav readiness
+    # Actions that make the aircraft navigate on GPS/EKF. They need a 3D fix, a
+    # healthy EKF position estimate and a known battery, all fresh.
+    NAV_ACTIONS = ("goto", "takeoff", "upload_mission", "start_mission")
+
+    def nav_ready_reasons(self, status: dict, telem: Optional[dict]) -> List[str]:
+        reasons = []
+        need = max(3, int(self.cfg.require_gps_fix))
+        fix = status.get("fix_type")
+        fix = fix if isinstance(fix, int) and not isinstance(fix, bool) else 0
+        if fix < need:
+            reasons.append(f"GPS fix {fix} < {need} (3D fix required for navigation)")
+        stale = self.stale_streams(status, ("gps", "ekf"))
+        if stale:
+            reasons.append(f"navigation data stale: no fresh {', '.join(stale)} message "
+                           f"(<= {self.cfg.telemetry_max_age_s:g} s)")
+        ekf = (telem or {}).get("ekf")
+        if not ekf:
+            reasons.append("EKF status unknown (no EKF_STATUS_REPORT): refusing to navigate")
+        elif not ekf.get("position_ok"):
+            reasons.append(f"EKF position not healthy ({ekf.get('flag_names')})")
+        if battery_unknown(status.get("battery")):
+            reasons.append("battery level unknown: refusing to navigate")
+        return reasons
+
     # ------------------------------------------------------------ common checks
     def check_common(self, action: str, status: dict, telem: Optional[dict] = None,
                      *, safe: bool = False) -> Verdict:
@@ -352,6 +377,8 @@ class FlightGate:
                 reasons.append(f"telemetry stale: no fresh {', '.join(stale)} message "
                                f"(<= {self.cfg.telemetry_max_age_s:g} s); a heartbeat alone "
                                "is not enough to command the aircraft")
+            if action in self.NAV_ACTIONS:
+                reasons += self.nav_ready_reasons(status, telem)
             o = self.pilot_override()
             if o:
                 reasons.append(f"pilot override active ({o['reason']}): the pilot has the "
