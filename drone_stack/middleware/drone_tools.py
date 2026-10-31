@@ -83,7 +83,8 @@ class DroneTools:
                        source_component=mc.source_component,
                        send_heartbeat=mc.send_heartbeat, request_streams=mc.request_streams,
                        stream_rate_hz=mc.stream_rate_hz, recent_buffer=mc.recent_buffer,
-                       heartbeat_timeout_s=mc.heartbeat_timeout_s)
+                       heartbeat_timeout_s=mc.heartbeat_timeout_s,
+                       expected_sysid=mc.vehicle_sysid)
         gate = FlightGate(cfg.safety)
         hub = MavlinkHub(node, flight_gate=gate, dry_run=cfg.safety.dry_run,
                          log_dir=cfg.server.log_dir)

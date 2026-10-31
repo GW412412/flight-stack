@@ -40,6 +40,10 @@ class MavlinkConfig:
     # Trap 1). It also makes our packets easy to spot in .tlog files.
     source_system: int = 250
     source_component: int = 191       # MAV_COMP_ID_ONBOARD_COMPUTER
+    # 0 = pin the first autopilot heartbeat heard. Set the FC's sysid to refuse
+    # any other system from ever being pinned (data and ACKs from every other
+    # sysid/compid are ignored either way once pinned).
+    vehicle_sysid: int = 0
     send_heartbeat: bool = True       # 1 Hz GCS-type heartbeat (identifies us)
     # MAVProxy already requests streams from the FC. Only enable this when the
     # server talks to the FC/SITL directly (no MAVProxy in between).

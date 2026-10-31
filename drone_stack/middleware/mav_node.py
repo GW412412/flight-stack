@@ -85,7 +85,8 @@ class MavNode:
                  source_system: int = 250, source_component: int = 191,
                  send_heartbeat: bool = False, request_streams: bool = False,
                  stream_rate_hz: int = 4, recent_buffer: int = 500,
-                 heartbeat_timeout_s: float = 3.0, conn=None):
+                 heartbeat_timeout_s: float = 3.0, conn=None,
+                 expected_sysid: Optional[int] = None):
         """`connection` is any pymavlink URL: udpin:HOST:PORT (listen for
         MAVProxy --out), tcp:127.0.0.1:5760 (SITL direct), /dev/ttyACM0 (FC
         direct, only if nothing else owns the port). `conn` lets tests inject
@@ -101,6 +102,8 @@ class MavNode:
         self.request_streams = request_streams
         self.stream_rate_hz = stream_rate_hz
         self.heartbeat_timeout_s = heartbeat_timeout_s
+        # 0/None = pin the first autopilot heartbeat; otherwise only that sysid.
+        self.expected_sysid = expected_sysid or None
 
         # Legacy flat state (tools.py / SafetyGate.can_arm read these keys).
         self.state = {
@@ -204,11 +207,17 @@ class MavNode:
                 self._handle(msg)
             except Exception as exc:   # never let one odd packet kill the reader
                 self.state["last_handler_error"] = f"{msg.get_type()}: {exc}"
-            self._dispatch_waiters(msg)
+            if self._from_vehicle(msg):         # ACKs etc. only from the pinned FC
+                self._dispatch_waiters(msg)
 
     def _from_vehicle(self, msg) -> bool:
-        """True if the packet comes from the autopilot we are flying."""
-        return self.vehicle_sysid is None or msg.get_srcSystem() == self.vehicle_sysid
+        """True only if the packet comes from the pinned autopilot (sysid AND
+        compid). Until the first autopilot heartbeat pins them nothing is
+        adopted, so another system on the link cannot feed us state first."""
+        if self.vehicle_sysid is None:
+            return False
+        return (msg.get_srcSystem() == self.vehicle_sysid
+                and msg.get_srcComponent() == self.vehicle_compid)
 
     def _handle(self, msg):
         t = msg.get_type()
@@ -223,6 +232,8 @@ class MavNode:
             if msg.type == M.MAV_TYPE_GCS or msg.autopilot == M.MAV_AUTOPILOT_INVALID:
                 return
             if self.vehicle_sysid is None:
+                if self.expected_sysid and msg.get_srcSystem() != self.expected_sysid:
+                    return                      # configured sysid: never pin another
                 self.vehicle_sysid = msg.get_srcSystem()
                 self.vehicle_compid = msg.get_srcComponent()
                 # pymavlink uses target_system for mode_mapping() etc.
