@@ -70,9 +70,12 @@ class SafetyConfig:
     max_mission_items: int = 100
 
     # Modes the LLM may request. Manual/acro-type modes are deliberately absent:
-    # those belong to the pilot's sticks.
+    # those belong to the pilot's sticks. AUTO is absent too: it flies whatever
+    # mission is stored on the FC, so the only way in is the start_mission tool
+    # (confirmation + validation of the stored mission). If a profile adds
+    # "AUTO" here, set_mode("AUTO") is routed through that same path.
     allowed_modes: List[str] = field(default_factory=lambda: [
-        "GUIDED", "LOITER", "BRAKE", "POSHOLD", "ALT_HOLD", "AUTO",
+        "GUIDED", "LOITER", "BRAKE", "POSHOLD", "ALT_HOLD",
         "LAND", "RTL", "SMART_RTL",
     ])
     # "Stop" actions: always allowed (no confirmation, no rate limit, not

@@ -522,6 +522,48 @@ class FlightGate:
                 uniq.append(r)
         return Verdict(not uniq, uniq)
 
+    # MAV_CMD names the stored mission may contain, and the frames whose altitude
+    # is metres above home (MAV_FRAME_GLOBAL_RELATIVE_ALT = 3, ..._INT = 6).
+    STORED_MISSION_COMMANDS = ("MAV_CMD_NAV_WAYPOINT", "MAV_CMD_NAV_RETURN_TO_LAUNCH")
+    RELATIVE_ALT_FRAMES = (3, 6)
+
+    def check_stored_mission(self, items: List[dict], home: Optional[dict]) -> Verdict:
+        """Validate the mission as downloaded FROM THE FC (not what we think we
+        uploaded: QGC or a previous session may have replaced it). `items` is
+        MavlinkHub.download_mission()['items']; seq 0 is the home placeholder."""
+        reasons: List[str] = []
+        body = [it for it in items if it.get("seq") != 0]
+        if not body:
+            reasons.append("no mission stored on the vehicle (upload_mission first)")
+        if len(body) > self.cfg.max_mission_items + 1:          # +1 for the final RTL
+            reasons.append(f"stored mission has {len(body)} items > max "
+                           f"{self.cfg.max_mission_items}")
+        if not any(it.get("command") == "MAV_CMD_NAV_WAYPOINT" for it in body):
+            reasons.append("stored mission has no NAV_WAYPOINT")
+        for it in body:
+            label, cmd = f"wp{it.get('seq')}", it.get("command")
+            if cmd not in self.STORED_MISSION_COMMANDS:
+                reasons.append(f"{label}: command {cmd} not allowed in an LLM-started "
+                               "mission (only NAV_WAYPOINT and RTL)")
+            elif cmd == "MAV_CMD_NAV_WAYPOINT":
+                if it.get("frame") not in self.RELATIVE_ALT_FRAMES:
+                    reasons.append(f"{label}: frame {it.get('frame')} is not "
+                                   "relative-to-home altitude")
+                try:
+                    reasons += self.check_position(float(it["lat"]), float(it["lon"]),
+                                                   float(it["alt_m"]), home, label=label)
+                except (KeyError, TypeError, ValueError):
+                    reasons.append(f"{label}: malformed item")
+        uniq = list(dict.fromkeys(reasons))
+        return Verdict(not uniq, uniq)
+
+    @staticmethod
+    def mission_digest(items: List[dict]) -> str:
+        """Short fingerprint of the stored mission; the confirmation token is
+        bound to it, so changing the mission invalidates an approval."""
+        blob = json.dumps(items, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()[:12]
+
     def check_start_mission(self, status: dict, mission_count: Optional[int]) -> Verdict:
         reasons = []
         if not status.get("armed"):
@@ -545,6 +587,8 @@ class FlightGate:
             "geofence_radius_m_from_home": c.geofence_radius_m,
             "max_speed_ms": c.max_speed_ms, "max_mission_items": c.max_mission_items,
             "allowed_modes": c.allowed_modes, "safe_modes_always_allowed": c.safe_modes,
+            "auto_mode": "only via start_mission: stored mission is re-read from the "
+                         "vehicle and validated, plus confirmation",
             "confirm_actions": c.confirm_actions, "confirm_mode": c.confirm_mode,
             "rate_limit": {"min_interval_s": c.min_action_interval_s,
                            "per_minute": c.max_actions_per_minute},

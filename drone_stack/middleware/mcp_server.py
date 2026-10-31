@@ -140,8 +140,9 @@ def build_server(tools: DroneTools, host: str = "127.0.0.1", port: int = 8765) -
     # ------------------------------------------------------------ actions
     @mcp.tool(annotations=ACT)
     def set_mode(mode: str, confirm_token: Optional[str] = None) -> dict:
-        """Change flight mode. Allowed: GUIDED, LOITER, BRAKE, POSHOLD, ALT_HOLD, AUTO,
-        LAND, RTL, SMART_RTL (see get_safety_limits). GUIDED is needed for takeoff/goto."""
+        """Change flight mode. Allowed: GUIDED, LOITER, BRAKE, POSHOLD, ALT_HOLD,
+        LAND, RTL, SMART_RTL (see get_safety_limits). GUIDED is needed for takeoff/goto.
+        AUTO is not a mode switch: use start_mission."""
         return tools.set_mode(mode, confirm_token)
 
     @mcp.tool(annotations=ACT)
@@ -196,8 +197,9 @@ def build_server(tools: DroneTools, host: str = "127.0.0.1", port: int = 8765) -
 
     @mcp.tool(annotations=ACT)
     def start_mission(confirm_token: Optional[str] = None) -> dict:
-        """Start the uploaded mission (switches to AUTO). Take off first.
-        Confirmation required."""
+        """Start the mission stored on the vehicle (switches to AUTO). Take off first.
+        The stored mission is re-read and validated (geofence, altitude, allowed
+        commands) and the confirmation is bound to it. Confirmation required."""
         return tools.start_mission(confirm_token)
 
     @mcp.tool(annotations=ACT)

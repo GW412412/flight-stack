@@ -243,6 +243,14 @@ class DroneTools:
     def set_mode(self, mode: str, confirm_token: Optional[str] = None) -> dict:
         """Change flight mode (whitelisted modes only)."""
         mode = mode.upper().strip()
+        if mode == "AUTO":
+            # AUTO flies whatever is stored on the FC: never a bare mode switch.
+            if "AUTO" not in self.gate.cfg.allowed_modes:
+                return {"ok": False, "blocked": True, "action": "set_mode",
+                        "reasons": ["AUTO is not an LLM-allowed mode: use start_mission "
+                                    "(re-reads and validates the stored mission, needs "
+                                    "confirmation)"]}
+            return self.start_mission(confirm_token)
         return self._act("set_mode", {"mode": mode}, confirm_token=confirm_token,
                          safe=self.gate.is_safe_mode(mode),
                          checks=lambda s, t: self.gate.check_mode(mode),
@@ -375,12 +383,27 @@ class DroneTools:
                                   f"{' + RTL' if rtl_at_end else ''}")
 
     def start_mission(self, confirm_token: Optional[str] = None) -> dict:
-        """Start the uploaded mission (switch to AUTO; must be airborne)."""
-        return self._act("start_mission", {}, confirm_token=confirm_token,
-                         checks=lambda s, t: self.gate.check_start_mission(
-                             s, self._last_mission_count),
+        """Start the mission stored on the FC (switch to AUTO; must be airborne).
+        The stored mission is downloaded and validated first (geofence, altitude,
+        allowed commands); the confirmation token is bound to its fingerprint."""
+        dl = self.hub.download_mission()
+        if not dl.get("ok"):
+            return {"ok": False, "blocked": True, "action": "start_mission",
+                    "reasons": [f"could not read the stored mission to validate it: "
+                                f"{dl.get('error', 'unknown error')}"]}
+        items = dl["items"]
+        stored = self.gate.check_stored_mission(items, self.node.home())
+        self._last_mission_count = max(0, dl["count"] - 1)
+        digest = self.gate.mission_digest(items)
+        def checks(s, t):
+            v = self.gate.check_start_mission(s, self._last_mission_count)
+            reasons = stored.reasons + v.reasons
+            return Verdict(not reasons, reasons)
+        return self._act("start_mission", {"mission": digest}, confirm_token=confirm_token,
+                         checks=checks,
                          execute=lambda: self.hub.send_mode("AUTO"),
-                         readback="start the mission (AUTO)")
+                         readback=f"start the stored mission (AUTO): {self._last_mission_count}"
+                                  f" items, fingerprint {digest}")
 
     def clear_pilot_override(self, confirm_token: Optional[str] = None) -> dict:
         """Hand control back to the LLM after the pilot took over (confirmation)."""
