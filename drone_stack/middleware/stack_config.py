@@ -95,6 +95,11 @@ class SafetyConfig:
     confirm_mode: str = "echo"
     confirm_ttl_s: float = 60.0
 
+    # Every non-safe action needs position, attitude and sys_status messages
+    # younger than this (a live heartbeat alone is not enough); goto/mission
+    # actions also need GPS and EKF messages that fresh.
+    telemetry_max_age_s: float = 3.0
+
     # Rate limits on non-safe actions.
     min_action_interval_s: float = 1.0
     max_actions_per_minute: int = 20

@@ -57,6 +57,14 @@ EKF_FLAG_NAMES = {
 # What Guided/Loiter needs from the EKF before we let the LLM move the drone.
 EKF_POSITION_OK = 1 | 2 | 4 | 16 | 32
 
+# Per-message freshness. A live HEARTBEAT only proves the autopilot is up, not
+# that position/attitude/battery are still arriving (a stream can die alone).
+STREAM_OF_MSG = {
+    "GLOBAL_POSITION_INT": "position", "ATTITUDE": "attitude", "SYS_STATUS": "sys_status",
+    "GPS_RAW_INT": "gps", "EKF_STATUS_REPORT": "ekf", "EXTENDED_SYS_STATE": "landed",
+}
+LANDED_STATE_NAMES = {0: "UNDEFINED", 1: "ON_GROUND", 2: "IN_AIR", 3: "TAKEOFF", 4: "LANDING"}
+
 RC_RECEIVER_BIT = M.MAV_SYS_STATUS_SENSOR_RC_RECEIVER  # 0x10000
 
 
@@ -134,6 +142,7 @@ class MavNode:
         self._threads: List[threading.Thread] = []
         self._csv = None
         self._last_hb: Optional[float] = None
+        self._seen: dict = {}          # stream name -> time.monotonic() of last message
         self.vehicle_sysid: Optional[int] = None
         self.vehicle_compid: Optional[int] = None
         self.vehicle_type: Optional[int] = None
@@ -259,6 +268,8 @@ class MavNode:
             return
         if not self._from_vehicle(msg):
             return
+        if t in STREAM_OF_MSG:
+            self._seen[STREAM_OF_MSG[t]] = time.monotonic()
         if t == "GLOBAL_POSITION_INT":
             self.state.update(lat=msg.lat / 1e7, lon=msg.lon / 1e7, alt=msg.alt / 1e3,
                               rel_alt=msg.relative_alt / 1e3, heading=msg.hdg / 100.0)
@@ -288,6 +299,8 @@ class MavNode:
             self.telem["gps"] = {"fix_type": msg.fix_type,
                                  "satellites": msg.satellites_visible,
                                  "hdop": msg.eph / 100.0 if msg.eph != 65535 else None}
+        elif t == "EXTENDED_SYS_STATE":
+            self.state["landed_state"] = msg.landed_state
         elif t == "VFR_HUD":
             self.telem["vfr_hud"] = {"groundspeed_ms": round(msg.groundspeed, 2),
                                      "airspeed_ms": round(msg.airspeed, 2),
@@ -373,6 +386,13 @@ class MavNode:
     def heartbeat_age(self) -> Optional[float]:
         return None if self._last_hb is None else time.time() - self._last_hb
 
+    def msg_ages(self) -> dict:
+        """Seconds since the last position/attitude/sys_status/gps/ekf/landed
+        message from the pinned vehicle (None = never received)."""
+        now = time.monotonic()
+        return {name: (round(now - self._seen[name], 2) if name in self._seen else None)
+                for name in STREAM_OF_MSG.values()}
+
     def home(self) -> Optional[dict]:
         return self.telem.get("home")
 
@@ -383,6 +403,12 @@ class MavNode:
         if self._last_hb:
             s["heartbeat_age_s"] = round(time.time() - self._last_hb, 2)
         s["link_ok"] = self.link_ok()
+        ages = self.msg_ages()
+        s["msg_age_s"] = ages
+        # landed state is only reported while its own message is fresh
+        ls = s.pop("landed_state", None)
+        fresh = ages["landed"] is not None and ages["landed"] <= self.heartbeat_timeout_s
+        s["landed_state"] = LANDED_STATE_NAMES.get(ls) if (fresh and ls is not None) else None
         s["vehicle_sysid"] = self.vehicle_sysid
         h = self.home()
         if h and s.get("lat") is not None:

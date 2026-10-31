@@ -322,6 +322,19 @@ class FlightGate:
         chans = (telem.get("rc") or {}).get("channels") or []
         return len(chans) >= ch and chans[ch - 1] > self.cfg.llm_inhibit_pwm_above
 
+    # ------------------------------------------------------------ freshness
+    BASE_STREAMS = ("position", "attitude", "sys_status")
+
+    def stale_streams(self, status: dict, names) -> List[str]:
+        """Streams in `names` that are missing or older than telemetry_max_age_s.
+        A status with no age table at all counts as everything stale."""
+        ages = status.get("msg_age_s")
+        if not isinstance(ages, dict):
+            return list(names)
+        limit = self.cfg.telemetry_max_age_s
+        return [n for n in names
+                if not isinstance(ages.get(n), (int, float)) or ages[n] > limit]
+
     # ------------------------------------------------------------ common checks
     def check_common(self, action: str, status: dict, telem: Optional[dict] = None,
                      *, safe: bool = False) -> Verdict:
@@ -334,6 +347,11 @@ class FlightGate:
             reasons.append(f"telemetry link down/stale (heartbeat age "
                            f"{status.get('heartbeat_age_s')})")
         if not safe:
+            stale = self.stale_streams(status, self.BASE_STREAMS)
+            if stale:
+                reasons.append(f"telemetry stale: no fresh {', '.join(stale)} message "
+                               f"(<= {self.cfg.telemetry_max_age_s:g} s); a heartbeat alone "
+                               "is not enough to command the aircraft")
             o = self.pilot_override()
             if o:
                 reasons.append(f"pilot override active ({o['reason']}): the pilot has the "
@@ -388,9 +406,20 @@ class FlightGate:
         if not status.get("armed"):
             reasons.append("already disarmed")
         alt = status.get("rel_alt")
-        if alt is not None and alt > 1.0:
+        landed = status.get("landed_state")
+        alt_known = isinstance(alt, (int, float)) and not math.isnan(alt) \
+            and not self.stale_streams(status, ("position",))
+        if not alt_known:
+            # Unknown altitude is not "on the ground": only a fresh landed-state
+            # report of ON_GROUND lets a disarm through.
+            if landed != "ON_GROUND":
+                reasons.append("altitude unknown or stale and landed state not confirmed "
+                               f"(landed_state={landed}): refusing to disarm - use land")
+        elif alt > 1.0:
             reasons.append(f"airborne (rel_alt {alt:.1f} m): disarm would drop the "
                            "aircraft - use land instead")
+        elif landed in ("IN_AIR", "TAKEOFF", "LANDING"):
+            reasons.append(f"FC reports landed_state {landed}: refusing to disarm")
         return Verdict(not reasons, reasons)
 
     def check_takeoff(self, alt_m: float, status: dict) -> Verdict:
@@ -473,7 +502,10 @@ class FlightGate:
         if not mission_count:
             reasons.append("no mission on the vehicle (upload_mission first)")
         alt = status.get("rel_alt")
-        if alt is not None and alt < self.cfg.min_goto_alt_m:
+        if not isinstance(alt, (int, float)) or math.isnan(alt) \
+                or self.stale_streams(status, ("position",)):
+            reasons.append("altitude unknown or stale: cannot confirm the aircraft is airborne")
+        elif alt < self.cfg.min_goto_alt_m:
             reasons.append(f"rel_alt {alt:.1f} m < {self.cfg.min_goto_alt_m} m: take off first")
         return Verdict(not reasons, reasons)
 

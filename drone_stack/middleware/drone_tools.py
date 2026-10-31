@@ -117,7 +117,7 @@ class DroneTools:
         s = self.node.get_status()
         keys = ("link_ok", "heartbeat_age_s", "mode", "armed", "fix_type", "battery",
                 "voltage", "lat", "lon", "rel_alt", "heading", "rc_link_ok",
-                "dist_from_home_m", "vehicle_sysid")
+                "dist_from_home_m", "vehicle_sysid", "landed_state", "msg_age_s")
         out = {k: s.get(k) for k in keys}
         out["home"] = self.node.home()
         out["pilot_override"] = self.gate.pilot_override()

@@ -5,7 +5,7 @@ It is NOT a simulator. It speaks just enough MAVLink for the MCP stack:
 
   * HEARTBEAT (quadrotor / ArduPilot, copter custom modes), 1 Hz
   * GLOBAL_POSITION_INT, SYS_STATUS (incl. RC receiver health), GPS_RAW_INT,
-    EKF_STATUS_REPORT, VFR_HUD, ATTITUDE - 10 Hz
+    EKF_STATUS_REPORT, VFR_HUD, ATTITUDE, EXTENDED_SYS_STATE - 10 Hz
   * COMMAND_LONG: ARM/DISARM, DO_SET_MODE, NAV_TAKEOFF, DO_CHANGE_SPEED,
     REQUEST_MESSAGE(HOME_POSITION) -> COMMAND_ACK
   * SET_POSITION_TARGET_GLOBAL_INT in GUIDED -> flies there in a straight line
@@ -135,6 +135,9 @@ class FakeVehicle:
                 m.ekf_status_report_send(EKF_OK, 0.1, 0.1, 0.1, 0.1, 0.1)
                 m.vfr_hud_send(0, 0, 0, 30, self.alt, 0)
                 m.attitude_send(boot_ms, 0, 0, 0, 0, 0, 0)
+                m.extended_sys_state_send(
+                    0, M.MAV_LANDED_STATE_ON_GROUND if self.alt < 0.1
+                    else M.MAV_LANDED_STATE_IN_AIR)
             except OSError:
                 pass       # listener not up yet
             self._stop.wait(period)
