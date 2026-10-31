@@ -6,6 +6,9 @@ Two gates live here:
   INTEGRATION: conf >= 0.50, georeg >= 0.70, RC link present, video trusted,
   fail-closed pump off). Unchanged in spirit; spraying is out of scope for the
   LLM stack and nothing in the MCP server calls `can_spray`.
+  `can_spray` gates the AUTOMATED pulse path only. The pilot's manual fire
+  button is never routed through SafetyGate or FlightGate and must not be:
+  FlightGate has no spray action and no check here may inhibit it.
 
 * `FlightGate`  - the "LLM behind the sticks" gate. Every action tool in
   mcp_server.py calls one `FlightGate.check_*` method BEFORE the hub may

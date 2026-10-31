@@ -365,12 +365,21 @@ class MavlinkHub:
                             video_trusted: bool = True, live_id_enabled: bool = True,
                             on_time_s: float = 0.1) -> dict:
         """Legacy spray arbiter: gate check then brief DO_SPRAYER start/stop
-        pulse. Not exposed to the LLM stack (spraying is out of scope)."""
+        pulse. Not exposed to the LLM stack (spraying is out of scope).
+
+        Audit: every DO_SPRAYER command is logged by send_command_long, and each
+        request also writes a SPRAY_DECISION line (allowed, or blocked + reasons).
+        This gate is for the AUTOMATED path only. The pilot's manual fire button
+        does not go through here, and FlightGate never blocks it."""
         with self._lock:
             status = self.node.get_status()
             verdict = self.gate.can_spray(status, zone_bounds=zone_bounds, conf=conf,
                                           georeg=georeg, video_trusted=video_trusted,
                                           live_id_enabled=live_id_enabled)
+            decision = {"kind": "SPRAY_DECISION", "label": "spray_pulse",
+                        "allowed": verdict.allowed, "reasons": list(verdict.reasons),
+                        "conf": conf, "georeg": georeg, "dose_ml": dose_ml}
+            self._log(decision)
             if not verdict.allowed:
                 self._send_sprayer(False)
                 return {"ok": False, "pump": "off", "blockers": verdict.reasons,
