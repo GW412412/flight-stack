@@ -13,28 +13,42 @@ Call flow for an ACTION tool (e.g. `takeoff(alt_m=10)`):
                override / RC inhibit? rate limit?)
             2. FlightGate.check_<action> (envelope: alt, geofence, mode...)
             3. confirmation token, if the action is in confirm_actions
-            4. MavlinkHub.<action>()  -> the only MAVLink writer
+            4. MavlinkHub.<action>()  -> the only MAVLink writer, run inside
+               `hub.acting_for(action)`. At the moment of the write the hub
+               calls FlightGate.send_if_permitted, which re-checks pilot
+               authority and sends under ONE lock (atomic check-and-send).
+               If the pilot took over in the meantime nothing is sent and
+               the result is {"ok": false, "blocked": true, "stage": "send"}.
             5. result dict back to the LLM (ok / blocked / ack / dry_run)
+
+Every decision (refused at check, confirmation asked/refused, refused or
+done at send) is also written to the gate's bounded audit trail, readable
+with the read-only tool `get_gate_audit`.
 
 READ-ONLY tools (status, telemetry, data flow, params, mission) skip the
 gate entirely and never transmit anything except read requests.
 
 Every result is a plain JSON-able dict. Tools never raise to the LLM; errors
 come back as {"ok": false, "error": "..."} so the model can explain them.
+Wrong-typed or non-finite arguments (a list for an altitude, NaN, infinity,
+True for a number) are refused as {"ok": false, "blocked": true, ...} before
+anything else happens; see `_tool` below.
 """
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from typing import Any, Callable, Dict, List, Optional
 
 from mav_node import MavNode, haversine_m
 from mavlink_hub import MavlinkHub
-from safety_gate import FlightGate, Verdict
+from safety_gate import FlightGate, GateRefused, Verdict, clean_name, finite_number
 
 # System prompt shared by the CLI agent and exposed as an MCP prompt, so any
 # client (Open WebUI, Claude Desktop, ...) can load the same rules.
@@ -52,6 +66,44 @@ You fly ONLY through the provided MAVLink tools. Rules:
 6. Typical flight: get_status -> set_mode GUIDED -> arm -> takeoff -> goto/goto_relative -> land or rtl.
 7. Be brief. Latency matters more than eloquence. If unsure, hold position (hold) and ask.
 """
+
+
+def _tool(fn: Callable[..., dict]) -> Callable[..., dict]:
+    """Decorator for every public tool method: it can never raise.
+
+    Any exception that escapes (a bug, a dropped serial port, a value we did
+    not anticipate) becomes {"ok": False, "error": "..."}. Nothing was
+    transmitted unless the hub said so, and the gate's own checks always run
+    before any write, so turning an exception into a refusal is the safe
+    direction."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs) -> dict:
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            return {"ok": False, "action": fn.__name__,
+                    "error": f"{type(exc).__name__}: {exc}"}
+    return wrapper
+
+
+def _refuse(action: str, reasons: List[str]) -> dict:
+    """The standard 'blocked before anything was checked or sent' result."""
+    return {"ok": False, "blocked": True, "action": action, "reasons": list(reasons)}
+
+
+def _numbers(action: str, **values: Any):
+    """Check several numeric arguments at once.
+
+    Returns (dict of floats, None) or (None, blocked-result) so callers can
+    write `vals, err = _numbers(...); if err: return err`."""
+    out, bad = {}, []
+    for name, v in values.items():
+        f, why = finite_number(v, name)
+        if why:
+            bad.append(why)
+        else:
+            out[name] = f
+    return (None, _refuse(action, bad)) if bad else (out, None)
 
 
 def _offset_latlon(lat: float, lon: float, north_m: float, east_m: float):
@@ -111,6 +163,7 @@ class DroneTools:
             was_armed = armed
 
     # =============================================================== READ-ONLY
+    @_tool
     def get_status(self) -> dict:
         """Short health summary: link, mode, armed, GPS, battery, altitude."""
         s = self.node.get_status()
@@ -127,11 +180,13 @@ class DroneTools:
                            "running and forwarding to this server?")
         return out
 
+    @_tool
     def get_telemetry(self) -> dict:
         """Full grouped telemetry: attitude, position, GPS, battery, VFR HUD,
         EKF flags, RC channels, home, mission seq, last STATUSTEXT lines."""
         return self.node.get_telemetry()
 
+    @_tool
     def get_data_flow(self) -> dict:
         """Link/data-flow health: msg rates per type, packet loss, heartbeat
         age per source, bytes/s."""
@@ -140,20 +195,28 @@ class DroneTools:
         snap["connection"] = self.node.connection
         return snap
 
+    @_tool
     def get_recent_messages(self, msg_type: Optional[str] = None, limit: int = 20) -> dict:
         """Last N raw MAVLink messages (optionally one type, e.g. STATUSTEXT)."""
-        limit = max(1, min(int(limit), 200))
+        n, why = finite_number(limit, "limit")
+        limit = 20 if why else max(1, min(int(n), 200))
+        if msg_type is not None and not isinstance(msg_type, str):
+            return {"ok": False, "error": "msg_type must be text, e.g. 'STATUSTEXT'"}
         if msg_type:
             msgs = list(self.node.recent_by_type.get(msg_type.upper(), []))
         else:
             msgs = list(self.node.recent)
         return {"count": len(msgs[-limit:]), "messages": msgs[-limit:]}
 
+    @_tool
     def get_params(self, names: List[str]) -> dict:
         """Read parameters by exact name (max 20 per call). Unknown names -> null."""
+        if not isinstance(names, (list, tuple)) or not all(isinstance(n, str) for n in names):
+            return {"ok": False, "error": "names must be a list of parameter names (text)"}
         names = [n.upper() for n in names][:20]
         return {"params": {n: self.hub.get_param(n).get("value") for n in names}}
 
+    @_tool
     def get_mission(self) -> dict:
         """Download the mission currently stored on the flight controller."""
         r = self.hub.download_mission()
@@ -161,6 +224,7 @@ class DroneTools:
             self._last_mission_count = max(0, r["count"] - 1)
         return r
 
+    @_tool
     def get_safety_limits(self) -> dict:
         """The envelope the gate enforces + pending confirmations."""
         d = self.gate.describe()
@@ -171,24 +235,57 @@ class DroneTools:
         d["pending_confirmations"] = pend
         return d
 
+    @_tool
+    def get_gate_audit(self, limit: int = 50) -> dict:
+        """READ-ONLY. The last `limit` (max = capacity) FlightGate decisions
+        and authority-state changes, oldest first: what was allowed or
+        refused, why, the state before/after, and what caused it (e.g. the
+        mode change that latched a pilot override). Confirmation codes are
+        never stored here, so this is safe to show the LLM in operator mode.
+        In memory only; logs/llm-stack/mavlink-commands.jsonl is the durable
+        record of what was actually sent."""
+        entries = self.gate.audit.entries(limit)
+        return {"ok": True, "count": len(entries), "capacity": self.gate.audit.capacity,
+                "authority_state": self.gate.authority_state(), "entries": entries}
+
     # =============================================================== ACTIONS
     def _act(self, action: str, args: Dict[str, Any], *,
              checks: Callable[[dict, dict], Verdict],
              execute: Callable[[], dict], readback: str,
              safe: bool = False, confirm_token: Optional[str] = None) -> dict:
-        """Gate -> (confirm) -> hub. The single path for every action tool."""
+        """Gate -> (confirm) -> hub. The single path for every action tool.
+
+        Steps, in the original order (nothing here loosens a check):
+          1. common + action-specific checks -> refuse with reasons
+          2. confirmation code, if needed -> ask / refuse with reason
+          3. execute() inside hub.acting_for(action): the hub's write
+             re-checks pilot authority atomically (GateRefused -> blocked)
+        Each outcome is written to the gate's audit trail."""
         try:
             status, telem = self.node.get_status(), self.node.get_telemetry()
             common = self.gate.check_common(action, status, telem, safe=safe)
             specific = checks(status, telem)
             reasons = common.reasons + specific.reasons
             if reasons:
+                self.gate.record_decision(action, False, reasons, stage="check", safe=safe)
                 return {"ok": False, "blocked": True, "action": action, "reasons": reasons}
             if not safe and self.gate.needs_confirmation(action):
-                if not self.gate.confirmations.consume(confirm_token, action, args):
+                ok, why = self.gate.confirmations.check(confirm_token, action, args)
+                if not ok:
+                    given = confirm_token is not None and confirm_token != ""
+                    self.gate.record_decision(action, False, [why], stage="confirm")
                     return self._ask_confirmation(action, args, readback,
-                                                  bad_token=bool(confirm_token))
-            result = execute()
+                                                  bad_token=given, why=why)
+            acting = getattr(self.hub, "acting_for", None)
+            ctx = acting(action, safe=safe) if acting else nullcontext()
+            try:
+                with ctx:
+                    result = execute()
+            except GateRefused as exc:
+                # Pilot took over between step 1 and the write: nothing sent.
+                return {"ok": False, "blocked": True, "action": action, "stage": "send",
+                        "reasons": exc.reasons,
+                        "note": "authority changed after the checks; nothing was sent"}
             if not safe:
                 self.gate.rate.record()
             result.setdefault("action", action)
@@ -199,7 +296,8 @@ class DroneTools:
         except Exception as exc:    # never raise into the LLM
             return {"ok": False, "action": action, "error": f"{type(exc).__name__}: {exc}"}
 
-    def _ask_confirmation(self, action, args, readback, bad_token=False) -> dict:
+    def _ask_confirmation(self, action, args, readback, bad_token=False,
+                          why: Optional[str] = None) -> dict:
         token = self.gate.confirmations.request(action, args, readback)
         entry = {"t": round(time.time(), 1), "action": action, "args": args,
                  "readback": readback, "token": token}
@@ -207,9 +305,11 @@ class DroneTools:
             with open(self._conf_log, "a") as fh:
                 fh.write(json.dumps(entry, default=str) + "\n")
         out = {"ok": False, "confirmation_required": True, "action": action,
-               "readback": readback, "expires_in_s": self.gate.cfg.confirm_ttl_s}
+               "readback": readback, "expires_in_s": self.gate.confirmations.ttl_s}
         if bad_token:
-            out["warning"] = "the confirm_token given was wrong, expired or for other arguments"
+            out["warning"] = ("the confirm_token given was not accepted"
+                              + (f": {why}" if why else "")
+                              + ". A new code has been issued.")
         if self.gate.cfg.confirm_mode == "echo":
             out["confirm_token"] = token
             out["instructions"] = ("Tell the operator the readback. After they agree, call "
@@ -226,6 +326,7 @@ class DroneTools:
         return out
 
     # ---- arming ------------------------------------------------------------
+    @_tool
     def arm(self, confirm_token: Optional[str] = None) -> dict:
         """Arm the motors (needs confirmation). Vehicle should be in GUIDED."""
         return self._act("arm", {}, confirm_token=confirm_token,
@@ -233,21 +334,27 @@ class DroneTools:
                          execute=lambda: self.hub.arm(True),
                          readback="ARM the motors. Props will spin. Area clear?")
 
+    @_tool
     def disarm(self) -> dict:
         """Disarm (refused while airborne - land first)."""
         return self._act("disarm", {}, checks=lambda s, t: self.gate.check_disarm(s),
                          execute=lambda: self.hub.arm(False), readback="DISARM")
 
     # ---- modes -------------------------------------------------------------
+    @_tool
     def set_mode(self, mode: str, confirm_token: Optional[str] = None) -> dict:
         """Change flight mode (whitelisted modes only)."""
-        mode = mode.upper().strip()
+        m, why = clean_name(mode, "mode")
+        if why:
+            return _refuse("set_mode", [why])
+        mode = m
         return self._act("set_mode", {"mode": mode}, confirm_token=confirm_token,
                          safe=self.gate.is_safe_mode(mode),
                          checks=lambda s, t: self.gate.check_mode(mode),
                          execute=lambda: self.hub.send_mode(mode),
                          readback=f"change flight mode to {mode}")
 
+    @_tool
     def hold(self) -> dict:
         """Stop and hover here. Always allowed - the 'stop' button.
 
@@ -270,31 +377,42 @@ class DroneTools:
                              readback="hold position")
         return self.set_mode("LOITER")
 
+    @_tool
     def brake(self) -> dict:
         """Stop as fast as possible and hold (BRAKE). Always allowed."""
         return self.set_mode("BRAKE")
 
+    @_tool
     def land(self) -> dict:
         """Land where it is (LAND). Always allowed."""
         return self.set_mode("LAND")
 
+    @_tool
     def rtl(self) -> dict:
         """Return to launch (RTL). Always allowed."""
         return self.set_mode("RTL")
 
     # ---- flying ------------------------------------------------------------
+    @_tool
     def takeoff(self, alt_m: float, confirm_token: Optional[str] = None) -> dict:
         """Take off to alt_m metres above home (GUIDED + armed; confirmation)."""
-        alt_m = float(alt_m)
+        vals, err = _numbers("takeoff", alt_m=alt_m)
+        if err:
+            return err
+        alt_m = vals["alt_m"]
         return self._act("takeoff", {"alt_m": alt_m}, confirm_token=confirm_token,
                          checks=lambda s, t: self.gate.check_takeoff(alt_m, s),
                          execute=lambda: self.hub.takeoff(alt_m),
                          readback=f"TAKE OFF to {alt_m:.1f} m above home")
 
+    @_tool
     def goto(self, lat: float, lon: float, alt_m: float, wait_s: float = 0) -> dict:
         """Fly to lat/lon at alt_m above home (GUIDED). Optionally wait up to
         wait_s seconds (max 120) and report whether it arrived (< 2 m)."""
-        lat, lon, alt_m = float(lat), float(lon), float(alt_m)
+        vals, err = _numbers("goto", lat=lat, lon=lon, alt_m=alt_m, wait_s=wait_s or 0)
+        if err:
+            return err
+        lat, lon, alt_m, wait_s = vals["lat"], vals["lon"], vals["alt_m"], vals["wait_s"]
 
         def execute():
             r = self.hub.goto(lat, lon, alt_m)
@@ -304,16 +422,25 @@ class DroneTools:
                                                                   self.node.home()),
                          execute=execute, readback=f"go to {lat:.6f},{lon:.6f} @ {alt_m} m")
 
+    @_tool
     def goto_relative(self, north_m: float, east_m: float, alt_m: Optional[float] = None,
                       wait_s: float = 0) -> dict:
         """Move north_m / east_m metres from the CURRENT position (negative =
         south/west). alt_m = target altitude above home (default: keep)."""
+        nums = {"north_m": north_m, "east_m": east_m, "wait_s": wait_s or 0}
+        if alt_m is not None:
+            nums["alt_m"] = alt_m
+        vals, err = _numbers("goto_relative", **nums)
+        if err:
+            return err
         s = self.node.get_status()
         if s.get("lat") is None:
             return {"ok": False, "error": "no position yet"}
-        lat, lon = _offset_latlon(s["lat"], s["lon"], float(north_m), float(east_m))
-        alt = float(alt_m) if alt_m is not None else float(s.get("rel_alt") or 0.0)
-        r = self.goto(lat, lon, alt, wait_s)
+        lat, lon = _offset_latlon(s["lat"], s["lon"], vals["north_m"], vals["east_m"])
+        alt = vals["alt_m"] if alt_m is not None else float(s.get("rel_alt") or 0.0)
+        r = self.goto(lat, lon, alt, vals["wait_s"])
+        if not isinstance(r, dict):
+            return {"ok": False, "error": "unexpected goto result"}
         r["target"] = {"lat": round(lat, 7), "lon": round(lon, 7), "alt_m": alt}
         return r
 
@@ -335,18 +462,27 @@ class DroneTools:
         r.update(arrived=False, remaining_m=round(d, 1), note="still flying; poll get_status")
         return r
 
+    @_tool
     def set_speed(self, speed_ms: float) -> dict:
         """Set horizontal ground speed for GUIDED/AUTO (m/s)."""
-        speed_ms = float(speed_ms)
+        vals, err = _numbers("set_speed", speed_ms=speed_ms)
+        if err:
+            return err
+        speed_ms = vals["speed_ms"]
         return self._act("set_speed", {"speed_ms": speed_ms},
                          checks=lambda s, t: self.gate.check_speed(speed_ms),
                          execute=lambda: self.hub.set_speed(speed_ms),
                          readback=f"set speed {speed_ms} m/s")
 
     # ---- parameters --------------------------------------------------------
+    @_tool
     def set_param(self, name: str, value: float, confirm_token: Optional[str] = None) -> dict:
         """Write one allowlisted parameter (with read-back; confirmation)."""
-        name, value = name.upper(), float(value)
+        n, why = clean_name(name, "parameter name", max_len=16)
+        vals, err = _numbers("set_param", value=value)
+        if why or err:
+            return _refuse("set_param", ([why] if why else []) + (err or {}).get("reasons", []))
+        name, value = n, vals["value"]
         return self._act("set_param", {"name": name, "value": value},
                          confirm_token=confirm_token,
                          checks=lambda s, t: self.gate.check_param(name, value),
@@ -354,12 +490,29 @@ class DroneTools:
                          readback=f"set parameter {name} = {value}")
 
     # ---- missions ----------------------------------------------------------
+    @_tool
     def upload_mission(self, waypoints: List[Dict[str, float]], rtl_at_end: bool = True,
                        confirm_token: Optional[str] = None) -> dict:
         """Upload waypoints [{lat, lon, alt_m}, ...] (alt above home). Each
         point is checked against the geofence + altitude envelope."""
-        wps = [{"lat": float(w["lat"]), "lon": float(w["lon"]), "alt_m": float(w["alt_m"])}
-               for w in waypoints]
+        if not isinstance(waypoints, (list, tuple)):
+            return _refuse("upload_mission", ["waypoints must be a list of {lat, lon, alt_m}"])
+        if not isinstance(rtl_at_end, bool):
+            return _refuse("upload_mission", ["rtl_at_end must be true or false"])
+        wps, bad = [], []
+        for i, w in enumerate(waypoints):
+            if not isinstance(w, dict) or not all(k in w for k in ("lat", "lon", "alt_m")):
+                bad.append(f"wp{i + 1}: must be an object with lat, lon and alt_m")
+                continue
+            vals, err = _numbers("upload_mission", **{f"wp{i + 1} {k}": w[k]
+                                                      for k in ("lat", "lon", "alt_m")})
+            if err:
+                bad += err["reasons"]
+                continue
+            wps.append({"lat": vals[f"wp{i + 1} lat"], "lon": vals[f"wp{i + 1} lon"],
+                        "alt_m": vals[f"wp{i + 1} alt_m"]})
+        if bad:
+            return _refuse("upload_mission", bad)
 
         def execute():
             r = self.hub.upload_mission(wps, rtl_at_end=rtl_at_end)
@@ -373,6 +526,7 @@ class DroneTools:
                          readback=f"upload {len(wps)} waypoints"
                                   f"{' + RTL' if rtl_at_end else ''}")
 
+    @_tool
     def start_mission(self, confirm_token: Optional[str] = None) -> dict:
         """Start the uploaded mission (switch to AUTO; must be airborne)."""
         return self._act("start_mission", {}, confirm_token=confirm_token,
@@ -381,6 +535,7 @@ class DroneTools:
                          execute=lambda: self.hub.send_mode("AUTO"),
                          readback="start the mission (AUTO)")
 
+    @_tool
     def clear_pilot_override(self, confirm_token: Optional[str] = None) -> dict:
         """Hand control back to the LLM after the pilot took over (confirmation)."""
         o = self.gate.pilot_override()
@@ -390,17 +545,20 @@ class DroneTools:
         # deadlock); still needs actuation enabled + confirmation.
         if not self.gate.cfg.actuation_enabled:
             return {"ok": False, "blocked": True, "reasons": ["actuation disabled"]}
-        if not self.gate.confirmations.consume(confirm_token, "clear_pilot_override", {}):
+        ok, why = self.gate.confirmations.check(confirm_token, "clear_pilot_override", {})
+        if not ok:
+            given = confirm_token is not None and confirm_token != ""
+            self.gate.record_decision("clear_pilot_override", False, [why], stage="confirm")
             return self._ask_confirmation("clear_pilot_override", {},
                                           f"give control back to the LLM ({o['reason']})",
-                                          bad_token=bool(confirm_token))
-        self.gate.clear_pilot_override()
+                                          bad_token=given, why=why)
+        self.gate.clear_pilot_override(cause="operator confirmed clear_pilot_override")
         return {"ok": True, "note": "pilot override cleared; LLM actions allowed again"}
 
 
 # Names grouped for the MCP layer / tests.
 READ_ONLY_TOOLS = ["get_status", "get_telemetry", "get_data_flow", "get_recent_messages",
-                   "get_params", "get_mission", "get_safety_limits"]
+                   "get_params", "get_mission", "get_safety_limits", "get_gate_audit"]
 SAFE_ACTION_TOOLS = ["hold", "brake", "land", "rtl"]
 ACTION_TOOLS = ["arm", "disarm", "set_mode", "takeoff", "goto", "goto_relative",
                 "set_speed", "set_param", "upload_mission", "start_mission",

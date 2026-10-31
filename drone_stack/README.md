@@ -21,7 +21,7 @@ assistant — it does not replace ELRS RC authority.
     sitl/run_sitl.sh         # ArduCopter SITL (sim_vehicle.py or prebuilt binary)
     mavproxy/start_mavproxy.sh # MAVProxy hub: FC link -> udp 14550/14560/14565
     middleware/mcp_server.py # MAVLink MCP server (stdio / streamable HTTP / SSE)
-    middleware/drone_tools.py# the 22 gated tools + flight_rules system prompt
+    middleware/drone_tools.py# the 23 gated tools + flight_rules system prompt
     middleware/mcp_agent.py  # Ollama CLI agent over MCP
     middleware/mav_monitor.py# data-flow monitor: dashboard, tlog, CSV, web :8766
     middleware/stack_config.py, link_stats.py, fake_vehicle.py, tests/

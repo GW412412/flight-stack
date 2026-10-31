@@ -88,8 +88,17 @@ class SafetyConfig:
     #            MCP server console + logs/confirmations.jsonl (and shown by the
     #            monitor). A human has to read it out / type it in chat.
     #            Recommended on the real Pixhawk.
-    confirm_mode: str = "echo"
-    confirm_ttl_s: float = 60.0
+    confirm_mode: str = "operator"
+    # How long a confirmation code stays valid, in seconds (gate's monotonic
+    # clock). PLACEHOLDER: 45 s is a guess, not a measurement - long enough
+    # for a person to read the readback, read the code off the console and
+    # type it, short enough that an approval does not outlive the situation
+    # it was given for. Hard ceiling: safety_gate.MAX_CONFIRM_TTL_S (120 s);
+    # anything larger (or <= 0, NaN) stops the server at start-up.
+    confirm_ttl_s: float = 45.0
+    # How many gate decisions / state changes to keep in memory for the
+    # read-only get_gate_audit tool (oldest dropped first).
+    audit_max_entries: int = 500
 
     # Rate limits on non-safe actions.
     min_action_interval_s: float = 1.0
@@ -197,6 +206,9 @@ def load_config(path: Optional[str] = None) -> StackConfig:
         cfg.server.port = int(os.environ["MCP_PORT"])
     if cfg.safety.confirm_mode not in ("echo", "operator"):
         raise ValueError("safety.confirm_mode must be 'echo' or 'operator'")
+    # Fail at start-up, not mid-flight, if the confirmation lifetime is silly.
+    from safety_gate import validate_confirm_ttl
+    cfg.safety.confirm_ttl_s = validate_confirm_ttl(cfg.safety.confirm_ttl_s)
     # Normalise mode names once so comparisons elsewhere are simple.
     cfg.safety.allowed_modes = [m.upper() for m in cfg.safety.allowed_modes]
     cfg.safety.safe_modes = [m.upper() for m in cfg.safety.safe_modes]

@@ -114,7 +114,8 @@ def airborne(tmp_path):
     node.start(wait_heartbeat=False)
     fv = FakeVehicle(out=f"127.0.0.1:{port}").start()
     cfg = SafetyConfig(actuation_enabled=True, dry_run=False, geofence_radius_m=60,
-                       max_alt_m=20, min_action_interval_s=0, max_actions_per_minute=1000)
+                       max_alt_m=20, min_action_interval_s=0, max_actions_per_minute=1000,
+                       confirm_mode="echo")
     gate = FlightGate(cfg)
     hub = MavlinkHub(node, flight_gate=gate, dry_run=False, log_dir=str(tmp_path))
     t = DroneTools(node, hub, gate, log_dir=str(tmp_path), home_poll_s=0.5)
